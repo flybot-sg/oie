@@ -1,0 +1,13 @@
+{:paths ["src" "resources"]
+ :deps  {org.clojure/clojure {:mvn/version "1.12.4"}}
+
+ :aliases
+ {:dev    {:extra-paths ["test"]
+           :extra-deps  {nrepl/nrepl                            {:mvn/version "1.5.2"}
+                         cider/cider-nrepl                      {:mvn/version "0.58.0"}
+                         io.github.robertluo/rich-comment-tests #:git{:tag "v1.1.78" :sha "c7d044f"}}}
+  :test   {:extra-paths ["test"]
+           :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
+           :main-opts   ["-m" "kaocha.runner"]}
+  :cljfmt {:deps       {io.github.weavejester/cljfmt {:git/tag "0.16.3" :git/sha "f138389"}}
+           :ns-default cljfmt.tool}}}

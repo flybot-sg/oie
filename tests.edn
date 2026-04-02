@@ -1,0 +1,5 @@
+#kaocha/v1
+ {:tests [{:id :rct
+           :focus-meta [:rct]}
+          {:id :unit
+           :skip-meta [:rct]}]}
