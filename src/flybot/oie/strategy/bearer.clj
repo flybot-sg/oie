@@ -25,68 +25,59 @@
 
 ^:rct/test
 (comment
-  (require '[flybot.oie.core :as core])
-
   ;; valid token authenticates
-  (let [raw     "test-token"
-        th      (token/hash-token raw)
-        data    {:username "alice" :roles #{:user} :revoked-at nil
-                 :expires-at 2000}
-        s       (bearer-token-strategy {:verify-token #(when (= % th) data)
-                                        :clock (constantly 1000)})
-        handler (core/wrap-authenticate identity [s])
-        resp    (handler {:headers {"authorization" (str "Bearer " raw)}})]
-    (:username (core/get-identity resp)))
-  ;; => "alice"
+  (let [raw  "test-token"
+        th   (token/hash-token raw)
+        data {:username "alice" :roles #{:user} :revoked-at nil :expires-at 2000}
+        auth (:authenticate (bearer-token-strategy {:verify-token #(when (= % th) data)
+                                                    :clock (constantly 1000)}))]
+    (:authenticated (auth {:headers {"authorization" (str "Bearer " raw)}})))
+  ;; => {:username "alice", :roles #{:user}, :revoked-at nil, :expires-at 2000}
 
-  ;; unknown token returns 401
-  (let [s       (bearer-token-strategy {:verify-token (constantly nil)})
-        handler (core/wrap-authenticate identity [s])
-        resp    (handler {:headers {"authorization" "Bearer bad"}})]
-    (:status resp))
-  ;; => 401
+  ;; unknown token returns error
+  (let [auth (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
+    (:error (auth {:headers {"authorization" "Bearer bad"}})))
+  ;; => {:type :invalid-token, :message "Token is invalid, revoked, or expired."}
 
-  ;; expired token returns 401
-  (let [data    {:revoked-at nil :expires-at 0}
-        s       (bearer-token-strategy {:verify-token (constantly data)})
-        handler (core/wrap-authenticate identity [s])
-        resp    (handler {:headers {"authorization" "Bearer expired"}})]
-    (:status resp))
-  ;; => 401
+  ;; expired token returns error
+  (let [data {:revoked-at nil :expires-at 0}
+        auth (:authenticate (bearer-token-strategy {:verify-token (constantly data)}))]
+    (:error (auth {:headers {"authorization" "Bearer expired"}})))
+  ;; => {:type :invalid-token, :message "Token is invalid, revoked, or expired."}
 
-  ;; revoked token returns 401
-  (let [data    {:revoked-at 1000 :expires-at 2000}
-        s       (bearer-token-strategy {:verify-token (constantly data)
-                                        :clock (constantly 500)})
-        handler (core/wrap-authenticate identity [s])
-        resp    (handler {:headers {"authorization" "Bearer revoked"}})]
-    (:status resp))
+  ;; revoked token returns error
+  (let [data {:revoked-at 1000 :expires-at 2000}
+        auth (:authenticate (bearer-token-strategy {:verify-token (constantly data)
+                                                    :clock (constantly 500)}))]
+    (:error (auth {:headers {"authorization" "Bearer revoked"}})))
+  ;; => {:type :invalid-token, :message "Token is invalid, revoked, or expired."}
+
+  ;; unauthorized handler returns 401
+  (let [unauth (:unauthorized (bearer-token-strategy {:verify-token (constantly nil)}))]
+    (:status (unauth {} {:type :invalid-token :message "bad"})))
   ;; => 401
 
   ;; no Authorization header skips strategy (nil)
-  (let [s (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
-    (s {:headers {}}))
+  (let [auth (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
+    (auth {:headers {}}))
   ;; => nil
 
   ;; non-Bearer header skips strategy
-  (let [s (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
-    (s {:headers {"authorization" "Basic dXNlcjpw"}}))
+  (let [auth (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
+    (auth {:headers {"authorization" "Basic dXNlcjpw"}}))
   ;; => nil
 
   ;; case-insensitive Bearer scheme (RFC 6750)
-  (let [raw     "test-token"
-        th      (token/hash-token raw)
-        data    {:username "alice" :revoked-at nil
-                 :expires-at 2000}
-        s       (bearer-token-strategy {:verify-token #(when (= % th) data)
-                                        :clock (constantly 1000)})
-        handler (core/wrap-authenticate identity [s])
-        resp    (handler {:headers {"authorization" (str "bearer " raw)}})]
-    (:username (core/get-identity resp)))
-  ;; => "alice"
+  (let [raw  "test-token"
+        th   (token/hash-token raw)
+        data {:username "alice" :revoked-at nil :expires-at 2000}
+        auth (:authenticate (bearer-token-strategy {:verify-token #(when (= % th) data)
+                                                    :clock (constantly 1000)}))]
+    (:authenticated (auth {:headers {"authorization" (str "bearer " raw)}})))
+  ;; => {:username "alice", :revoked-at nil, :expires-at 2000}
 
   ;; "Bearer " with nothing after it skips strategy
-  (let [s (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
-    (s {:headers {"authorization" "Bearer "}}))
+  (let [auth (:authenticate (bearer-token-strategy {:verify-token (constantly nil)}))]
+    (auth {:headers {"authorization" "Bearer "}}))
   ;; => nil
   )

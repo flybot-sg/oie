@@ -115,6 +115,14 @@
     (:body resp))
   ;; => {:type :bad-token, :detail "expired"}
 
+  ;; non-erroring strategy's unauthorized fn is ignored
+  (let [s       {:authenticate (fn [_] nil)
+                 :unauthorized (fn [_req _e] {:status 401 :body "should not appear"})}
+        handler (wrap-authenticate identity [s])
+        resp    (handler {})]
+    [(:status resp) (:body resp)])
+  ;; => [401 nil]
+
   ;; get-identity returns nil for unauthenticated request
   (get-identity {})
   ;; => nil
