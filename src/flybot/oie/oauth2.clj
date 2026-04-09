@@ -1,4 +1,4 @@
-(ns flybot.oie.strategy.oauth2
+(ns flybot.oie.oauth2
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [ring.middleware.oauth2 :as ring-oauth2])
