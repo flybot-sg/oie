@@ -6,3 +6,4 @@ target/
 .lsp/
 *.class
 *.jar
+**/.calva/**

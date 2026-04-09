@@ -1,9 +1,10 @@
 (ns flybot.oie.integration-test
   (:require [clojure.test :refer [deftest is testing]]
             [flybot.oie.core :as core]
+            [flybot.oie.magic-link :as magic-link]
             [flybot.oie.session :as session]
             [flybot.oie.strategy.bearer :as bearer]
-            [flybot.oie.strategy.oauth2 :as oauth2]
+            [flybot.oie.oauth2 :as oauth2]
             [flybot.oie.strategy.session :as session-strat]
             [flybot.oie.token :as token]))
 
@@ -172,3 +173,54 @@
     (testing "session has no effect without session strategy"
       (is (= 401 (:status (app {:headers {}
                                 :session {session-key {:user-id 1}}})))))))
+
+(deftest magic-link-flow
+  (let [secret      "test-secret"
+        nonce-store (atom #{"nonce-1"})
+        consume     (fn [n] (when (@nonce-store n)
+                              (swap! nonce-store disj n)
+                              true))
+        sess-strat  (session-strat/session-strategy {:session-key session-key})
+        app         (-> (core/wrap-authenticate api-handler [sess-strat])
+                        (magic-link/wrap-magic-link
+                         {:verify-uri           "/auth/magic-link"
+                          :secret               secret
+                          :consume-nonce         consume
+                          :login-fn              (fn [{:keys [email]}]
+                                                   {:user-id 1 :email email})
+                          :session-key           session-key
+                          :success-redirect-uri  "/home"
+                          :clock                 clock}))]
+
+    (testing "unauthenticated request returns 401"
+      (is (= 401 (:status (app {:uri "/api" :headers {} :session {}})))))
+
+    (testing "magic link login creates session and redirects"
+      (let [token (magic-link/create-magic-link-token
+                   {:secret secret :email "alice@example.com"
+                    :nonce "nonce-1" :expires-at 2000})
+            resp  (app {:uri            "/auth/magic-link"
+                        :request-method :get
+                        :query-params   {"token" token}
+                        :session        {}})]
+        (is (= 302 (:status resp)))
+        (is (= "/home" (get-in resp [:headers "Location"])))
+        (is (= {:user-id 1 :email "alice@example.com"}
+               (get-in resp [:session session-key])))))
+
+    (testing "replay of same nonce returns 401"
+      (let [token (magic-link/create-magic-link-token
+                   {:secret secret :email "alice@example.com"
+                    :nonce "nonce-1" :expires-at 2000})
+            resp  (app {:uri            "/auth/magic-link"
+                        :request-method :get
+                        :query-params   {"token" token}
+                        :session        {}})]
+        (is (= 401 (:status resp)))
+        (is (= :already-used (get-in resp [:body :type])))))
+
+    (testing "session-authenticated request succeeds after login"
+      (let [session-data {session-key {:user-id 1 :email "alice@example.com"}}
+            resp         (app {:uri "/api" :headers {} :session session-data})]
+        (is (= 200 (:status resp)))
+        (is (= {:user-id 1 :email "alice@example.com"} (:body resp)))))))
