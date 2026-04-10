@@ -33,6 +33,7 @@ wrap-magic-link              ← HMAC-signed token creation (POST) + verificatio
 | `flybot.oie.magic-link` | `create-magic-link-token`, `wrap-magic-link` | Passwordless email authentication |
 | `flybot.oie.oauth2` | `decode-id-token`, `wrap-oauth2` | OAuth2/OIDC with session creation |
 | `flybot.oie.strategy.bearer` | `bearer-token-strategy` | Bearer token strategy for `wrap-authenticate` |
+| `flybot.oie.schema` | `validate-config`, `*-schema` | Malli config schemas for consumer-side validation |
 | `flybot.oie.strategy.session` | `session-strategy` | Session strategy for `wrap-authenticate` |
 
 ## Internal Dependencies
@@ -40,6 +41,7 @@ wrap-magic-link              ← HMAC-signed token creation (POST) + verificatio
 ```
 flybot.oie.strategy.bearer → flybot.oie.token
 flybot.oie.oauth2          → cheshire, ring.middleware.oauth2
+flybot.oie.schema          → malli
 ```
 
 All other namespaces have no internal dependencies.
@@ -58,4 +60,4 @@ All other namespaces have no internal dependencies.
 - **Root namespace**: `flybot.oie`
 - **Test**: Kaocha + RCT
 - **Dev**: nREPL + cider-nrepl
-- **External deps**: cheshire (JSON), ring-oauth2 (OAuth2 flow)
+- **External deps**: cheshire (JSON), malli (schema validation), ring-oauth2 (OAuth2 flow)
