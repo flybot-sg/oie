@@ -65,10 +65,10 @@
     (catch Exception _ nil)))
 
 (defn- verify-token
-  [secret token clock consume-nonce]
+  [secret token now consume-nonce]
   (if-let [{:keys [email nonce expires-at]} (parse-and-verify secret token)]
     (cond
-      (< expires-at (clock))
+      (< expires-at now)
       {:error {:type :expired :message "Magic link has expired."}}
 
       (not (consume-nonce nonce))
@@ -82,7 +82,7 @@
   [request {:keys [secret token-param clock consume-nonce login-fn
                    session-key success-redirect-uri]}]
   (if-let [token (get-in request [:query-params token-param])]
-    (let [result (verify-token secret token clock consume-nonce)
+    (let [result (verify-token secret token (clock) consume-nonce)
           ident  (some-> (:verified result) login-fn)]
       (cond
         (:error result)
@@ -115,25 +115,23 @@
 (defn wrap-magic-link
   "Ring middleware for magic link authentication.
    Intercepts `verify-uri` (GET) to verify tokens and create sessions,
-   and optionally `request-uri` (POST) to create and deliver tokens.
+   and `request-uri` (POST) to create and deliver tokens.
    All other requests pass through.
 
-   Verification config:
+   Config:
    - `verify-uri` — URI path to intercept for verification
+   - `request-uri` — URI path to intercept for token creation (POST)
    - `secret` — HMAC key string
    - `consume-nonce` — `(fn [nonce] -> truthy | nil)`, atomically consume nonce
+   - `store-nonce` — `(fn [nonce email expires-at])`, persist nonce
+   - `send-fn` — `(fn [email token])`, deliver the token to the user
    - `login-fn` — `(fn [profile] -> identity | nil)`, app-level authorization
    - `session-key` — key to store identity in session
    - `success-redirect-uri` — string or `(fn [req] -> uri)`
-   - `token-param` — query param name, defaults to `\"token\"`
-   - `clock` — `(fn [] -> epoch-ms)`, defaults to `System/currentTimeMillis`
-
-   Creation config (all required when `request-uri` is provided):
-   - `request-uri` — URI path to intercept for token creation (POST)
-   - `store-nonce` — `(fn [nonce email expires-at])`, persist nonce
-   - `send-fn` — `(fn [email token])`, deliver the token to the user
    - `token-ttl` — token lifetime in ms
-   - `request-param` — param name for email, defaults to `\"email\"`"
+   - `token-param` — query param name, defaults to `\"token\"`
+   - `request-param` — param name for email, defaults to `\"email\"`
+   - `clock` — `(fn [] -> epoch-ms)`, defaults to `System/currentTimeMillis`"
   [handler {:keys [verify-uri request-uri token-param request-param clock]
             :or   {token-param "token" request-param "email"
                    clock #(System/currentTimeMillis)}
@@ -145,8 +143,7 @@
              (= :get (:request-method request)))
         (handle-verify request config)
 
-        (and request-uri
-             (= (:uri request) request-uri)
+        (and (= (:uri request) request-uri)
              (= :post (:request-method request)))
         (handle-request request config)
 
@@ -348,12 +345,6 @@
   ;; GET to request-uri → pass through
   (let [handler (make-request-handler {})]
     (:status (handler {:uri "/auth/magic-link/request" :request-method :get
-                       :params {"email" "alice@example.com"}})))
-  ;; => 200
-
-  ;; request-uri not configured → POST passes through
-  (let [handler (make-handler {})]
-    (:status (handler {:uri "/auth/magic-link/request" :request-method :post
                        :params {"email" "alice@example.com"}})))
   ;; => 200
 
