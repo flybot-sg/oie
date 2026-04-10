@@ -45,149 +45,139 @@
   ;; => {:sub "1"}
   )
 
-(defn make-oauth-success-handler
-  "Ring handler for the OAuth2 success callback (landing URI).
-   Extracts tokens for `provider-key`, calls `fetch-profile-fn` and `login-fn`,
-   stores the identity in session under `session-key`, and redirects.
-   `success-redirect-uri` can be a string or a `(fn [request])` for dynamic redirects."
-  [{:keys [provider-key session-key fetch-profile-fn login-fn success-redirect-uri]}]
-  (fn [request]
-    (if-let [token-map (get-in request [:oauth2/access-tokens provider-key])]
-      (let [profile  (fetch-profile-fn token-map)
-            ident    (login-fn profile)
-            redirect (if (fn? success-redirect-uri)
-                       (success-redirect-uri request)
-                       success-redirect-uri)]
-        (if ident
-          {:status  302
-           :headers {"Location" redirect}
-           :session (assoc (:session request) session-key ident)}
-          {:status 403}))
-      {:status 403})))
+(defn- handle-landing
+  [request {:keys [provider-key session-key fetch-profile-fn
+                   login-fn success-redirect-uri]}]
+  (let [profile (fetch-profile-fn (get-in request [:oauth2/access-tokens provider-key]))
+        ident   (login-fn profile)
+        session (dissoc (:session request) ::ring-oauth2/access-tokens)]
+    (if ident
+      {:status  302
+       :headers {"Location" (if (fn? success-redirect-uri)
+                              (success-redirect-uri request)
+                              success-redirect-uri)}
+       :session (assoc session session-key ident)}
+      {:status  403
+       :session session})))
+
+(defn- build-landing-configs [profiles]
+  (reduce-kv
+   (fn [m provider-key profile]
+     (assoc m (:landing-uri profile)
+            (select-keys (assoc profile :provider-key provider-key)
+                         [:provider-key :session-key :fetch-profile-fn
+                          :login-fn :success-redirect-uri])))
+   {}
+   profiles))
+
+(defn wrap-oauth2
+  "Ring middleware that handles the full OAuth2 login flow.
+   Delegates to ring.middleware.oauth2/wrap-oauth2 for the authorization code
+   exchange, then intercepts the landing-uri to create a session and redirect.
+
+   `profiles` is a map of provider-key to profile config.
+   Each profile requires ring-oauth2 keys:
+     :authorize-uri, :access-token-uri, :client-id, :client-secret,
+     :scopes, :launch-uri, :redirect-uri, :landing-uri
+   Plus oie keys:
+     :session-key          — key to store identity in session
+     :fetch-profile-fn     — `(fn [token-map] -> profile)`
+     :login-fn             — `(fn [profile] -> identity | nil)`
+     :success-redirect-uri — string or `(fn [req] -> uri)`"
+  [handler profiles]
+  (let [landing-configs (build-landing-configs profiles)
+        interceptor     (fn [request]
+                          (if-let [config (get landing-configs (:uri request))]
+                            (if (get-in request [:oauth2/access-tokens (:provider-key config)])
+                              (handle-landing request config)
+                              (handler request))
+                            (handler request)))]
+    (ring-oauth2/wrap-oauth2 interceptor profiles)))
 
 ^:rct/test
 (comment
-  ;; success flow: fetches profile, logs in, stores in session, redirects
-  (let [handler (make-oauth-success-handler
-                 {:provider-key     :google
-                  :session-key      :oie/user
-                  :fetch-profile-fn (fn [tokens]
-                                      {:email "alice@example.com"
-                                       :name  "Alice"})
-                  :login-fn         (fn [profile]
-                                      {:user-id 1 :email (:email profile)})
-                  :success-redirect-uri "/"})
-        request {:oauth2/access-tokens {:google {:token    "access-tok"
-                                                 :id-token "jwt-string"}}
-                 :session {}}
-        resp    (handler request)]
+  (def ^:private test-profile
+    {:authorize-uri       "https://example.com/authorize"
+     :access-token-uri    "https://example.com/token"
+     :redirect-uri        "/oauth2/test/callback"
+     :launch-uri          "/oauth2/test"
+     :landing-uri         "/oauth2/test/success"
+     :scopes              [:openid]
+     :client-id           "test-id"
+     :client-secret       "test-secret"
+     :session-key         :oie/user
+     :fetch-profile-fn    (fn [_tokens]
+                            {:email "alice@example.com"
+                             :name  "Alice"})
+     :login-fn            (fn [profile]
+                            {:user-id 1 :email (:email profile)})
+     :success-redirect-uri "/"})
+
+  (defn- make-handler [overrides]
+    (wrap-oauth2 (constantly {:status 200 :body "ok"})
+                 {:test (merge test-profile overrides)}))
+
+  (defn- landing-request
+    ([tokens] (landing-request tokens {}))
+    ([tokens session-extra]
+     {:uri            "/oauth2/test/success"
+      :request-method :get
+      :session        (merge {::ring-oauth2/access-tokens {:test tokens}}
+                             session-extra)}))
+
+  ;; success flow: tokens → 302 redirect with session, tokens cleaned
+  (let [handler (make-handler {})
+        resp    (handler (landing-request {:token "access-tok"}))]
     [(:status resp)
      (get-in resp [:headers "Location"])
-     (get-in resp [:session :oie/user])])
-  ;; => [302 "/" {:user-id 1, :email "alice@example.com"}]
+     (get-in resp [:session :oie/user])
+     (contains? (:session resp) ::ring-oauth2/access-tokens)])
+  ;; => [302 "/" {:user-id 1, :email "alice@example.com"} false]
 
   ;; fetch-profile-fn receives the correct token map
   (let [received (atom nil)
-        handler  (make-oauth-success-handler
-                  {:provider-key     :github
-                   :session-key      :oie/user
-                   :fetch-profile-fn (fn [tokens] (reset! received tokens) {:email "bob@example.com"})
-                   :login-fn         identity
-                   :success-redirect-uri "/home"})
-        tokens   {:token "ghp_abc" :id-token "jwt"}
-        request  {:oauth2/access-tokens {:github tokens} :session {}}]
-    (handler request)
+        handler  (make-handler {:fetch-profile-fn (fn [tokens] (reset! received tokens) {:email "bob@example.com"})})
+        tokens   {:token "ghp_abc" :id-token "jwt"}]
+    (handler (landing-request tokens))
     @received)
   ;; => {:token "ghp_abc", :id-token "jwt"}
 
-  ;; preserves existing session data
-  (let [handler (make-oauth-success-handler
-                 {:provider-key     :google
-                  :session-key      :oie/user
-                  :fetch-profile-fn (constantly {:email "alice@example.com"})
-                  :login-fn         identity
-                  :success-redirect-uri "/"})
-        request {:oauth2/access-tokens {:google {:token "tok"}}
-                 :session {:other-key "keep-me"}}
-        resp    (handler request)]
+  ;; preserves existing session data (minus tokens)
+  (let [handler (make-handler {})
+        resp    (handler (landing-request {:token "tok"} {:other-key "keep-me"}))]
     (get-in resp [:session :other-key]))
   ;; => "keep-me"
 
-  ;; success-redirect-uri as function uses request to determine redirect
-  (let [handler (make-oauth-success-handler
-                 {:provider-key     :google
-                  :session-key      :oie/user
-                  :fetch-profile-fn (constantly {:email "alice@example.com"})
-                  :login-fn         identity
-                  :success-redirect-uri (fn [req] (get-in req [:session :return-to] "/"))})
-        request {:oauth2/access-tokens {:google {:token "tok"}}
-                 :session {:return-to "/dashboard"}}
-        resp    (handler request)]
+  ;; success-redirect-uri as function uses request context
+  (let [handler (make-handler {:success-redirect-uri
+                               (fn [req] (get-in req [:session :return-to] "/"))})
+        resp    (handler (landing-request {:token "tok"} {:return-to "/dashboard"}))]
     (get-in resp [:headers "Location"]))
   ;; => "/dashboard"
 
-  ;; login-fn returns nil → 403
-  (let [handler (make-oauth-success-handler
-                 {:provider-key     :google
-                  :session-key      :oie/user
-                  :fetch-profile-fn (constantly {:email "banned@example.com"})
-                  :login-fn         (constantly nil)
-                  :success-redirect-uri "/"})]
-    (:status (handler {:oauth2/access-tokens {:google {:token "tok"}}
-                       :session {}})))
-  ;; => 403
+  ;; login-fn returns nil → 403, tokens still cleaned
+  (let [handler (make-handler {:login-fn (constantly nil)})
+        resp    (handler (landing-request {:token "tok"}))]
+    [(:status resp)
+     (contains? (:session resp) ::ring-oauth2/access-tokens)])
+  ;; => [403 false]
 
-  ;; missing tokens returns 403
-  (let [handler (make-oauth-success-handler
-                 {:provider-key     :google
-                  :session-key      :oie/user
-                  :fetch-profile-fn (constantly {:email "alice@example.com"})
-                  :login-fn         identity
-                  :success-redirect-uri "/"})]
-    (:status (handler {:session {}})))
-  ;; => 403
-  )
+  ;; landing-uri without tokens → pass through to handler
+  (let [handler (make-handler {})]
+    (:status (handler {:uri "/oauth2/test/success" :request-method :get :session {}})))
+  ;; => 200
 
-(defn wrap-oauth2
-  "Ring middleware that handles the OAuth2 authorization code flow.
-   Delegates to ring.middleware.oauth2/wrap-oauth2.
-   `profiles` is a map of provider-key to profile config.
-   Each profile requires at minimum:
-     :authorize-uri, :access-token-uri, :client-id, :client-secret,
-     :scopes, :launch-uri, :redirect-uri, :landing-uri"
-  [handler profiles]
-  (ring-oauth2/wrap-oauth2 handler profiles))
-
-^:rct/test
-(comment
-  ;; non-OAuth request passes through
-  (let [profile {:authorize-uri    "https://example.com/authorize"
-                 :access-token-uri "https://example.com/token"
-                 :redirect-uri     "/oauth2/test/callback"
-                 :launch-uri       "/oauth2/test"
-                 :landing-uri      "/"
-                 :scopes           [:openid]
-                 :client-id        "test-id"
-                 :client-secret    "test-secret"}
-        handler (wrap-oauth2 (constantly {:status 200}) {:test profile})]
+  ;; non-landing-uri → pass through
+  (let [handler (make-handler {})]
     (:status (handler {:uri "/hello" :request-method :get})))
   ;; => 200
 
   ;; launch URI triggers redirect to authorize-uri
-  (let [profile {:authorize-uri    "https://example.com/authorize"
-                 :access-token-uri "https://example.com/token"
-                 :redirect-uri     "/oauth2/test/callback"
-                 :launch-uri       "/oauth2/test"
-                 :landing-uri      "/"
-                 :scopes           [:openid]
-                 :client-id        "test-id"
-                 :client-secret    "test-secret"}
-        handler (wrap-oauth2 (constantly {:status 200}) {:test profile})
-        resp    (handler {:uri            "/oauth2/test"
-                          :request-method :get
-                          :scheme         :https
-                          :server-name    "example.com"
-                          :server-port    443})]
-    (:status resp))
+  (let [handler (make-handler {})]
+    (:status (handler {:uri            "/oauth2/test"
+                       :request-method :get
+                       :scheme         :https
+                       :server-name    "example.com"
+                       :server-port    443})))
   ;; => 302
   )
