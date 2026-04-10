@@ -78,44 +78,80 @@
       {:verified {:email email}})
     {:error {:type :invalid-token :message "Magic link token is invalid."}}))
 
+(defn- handle-verify
+  [request {:keys [secret token-param clock consume-nonce login-fn
+                   session-key success-redirect-uri]}]
+  (if-let [token (get-in request [:query-params token-param])]
+    (let [result (verify-token secret token clock consume-nonce)
+          ident  (some-> (:verified result) login-fn)]
+      (cond
+        (:error result)
+        {:status 401 :body (:error result)}
+
+        (nil? ident)
+        {:status 403}
+
+        :else
+        {:status  302
+         :headers {"Location" (if (fn? success-redirect-uri)
+                                (success-redirect-uri request)
+                                success-redirect-uri)}
+         :session (assoc (:session request) session-key ident)}))
+    {:status 401 :body {:type :missing-token :message "No magic link token provided."}}))
+
+(defn- handle-request
+  [request {:keys [secret request-param clock token-ttl store-nonce send-fn]}]
+  (if-let [email (get-in request [:params request-param])]
+    (let [nonce      (str (random-uuid))
+          expires-at (+ (clock) token-ttl)
+          token      (create-magic-link-token
+                      {:secret secret :email email
+                       :nonce nonce :expires-at expires-at})]
+      (store-nonce nonce email expires-at)
+      (send-fn email token)
+      {:status 200})
+    {:status 400 :body {:type :missing-email :message "No email provided."}}))
+
 (defn wrap-magic-link
   "Ring middleware for magic link authentication.
-   Intercepts requests to `verify-uri`, validates the token, calls `login-fn`,
-   stores identity in session, and redirects. All other requests pass through.
+   Intercepts `verify-uri` (GET) to verify tokens and create sessions,
+   and optionally `request-uri` (POST) to create and deliver tokens.
+   All other requests pass through.
 
-   Config:
-   - `verify-uri` — URI path to intercept
+   Verification config:
+   - `verify-uri` — URI path to intercept for verification
    - `secret` — HMAC key string
    - `consume-nonce` — `(fn [nonce] -> truthy | nil)`, atomically consume nonce
    - `login-fn` — `(fn [profile] -> identity | nil)`, app-level authorization
    - `session-key` — key to store identity in session
    - `success-redirect-uri` — string or `(fn [req] -> uri)`
    - `token-param` — query param name, defaults to `\"token\"`
-   - `clock` — `(fn [] -> epoch-ms)`, defaults to `System/currentTimeMillis`"
-  [handler {:keys [verify-uri secret consume-nonce login-fn session-key
-                   success-redirect-uri token-param clock]
-            :or   {token-param "token" clock #(System/currentTimeMillis)}}]
-  (fn [request]
-    (if (and (= (:uri request) verify-uri)
+   - `clock` — `(fn [] -> epoch-ms)`, defaults to `System/currentTimeMillis`
+
+   Creation config (all required when `request-uri` is provided):
+   - `request-uri` — URI path to intercept for token creation (POST)
+   - `store-nonce` — `(fn [nonce email expires-at])`, persist nonce
+   - `send-fn` — `(fn [email token])`, deliver the token to the user
+   - `token-ttl` — token lifetime in ms
+   - `request-param` — param name for email, defaults to `\"email\"`"
+  [handler {:keys [verify-uri request-uri token-param request-param clock]
+            :or   {token-param "token" request-param "email"
+                   clock #(System/currentTimeMillis)}
+            :as   config}]
+  (let [config (assoc config :token-param token-param :request-param request-param :clock clock)]
+    (fn [request]
+      (cond
+        (and (= (:uri request) verify-uri)
              (= :get (:request-method request)))
-      (if-let [token (get-in request [:query-params token-param])]
-        (let [result (verify-token secret token clock consume-nonce)
-              ident  (some-> (:verified result) login-fn)]
-          (cond
-            (:error result)
-            {:status 401 :body (:error result)}
+        (handle-verify request config)
 
-            (nil? ident)
-            {:status 403}
+        (and request-uri
+             (= (:uri request) request-uri)
+             (= :post (:request-method request)))
+        (handle-request request config)
 
-            :else
-            {:status  302
-             :headers {"Location" (if (fn? success-redirect-uri)
-                                    (success-redirect-uri request)
-                                    success-redirect-uri)}
-             :session (assoc (:session request) session-key ident)}))
-        {:status 401 :body {:type :missing-token :message "No magic link token provided."}})
-      (handler request))))
+        :else
+        (handler request)))))
 
 ^:rct/test
 (comment
@@ -255,4 +291,96 @@
     (handler {:uri "/auth/magic-link" :request-method :get :query-params {"token" "garbage.garbage"} :session {}})
     @called?)
   ;; => false
+
+  ;; --- creation route tests ---
+
+  (defn- make-request-handler [opts]
+    (wrap-magic-link (constantly {:status 200 :body "ok"})
+                     (merge {:verify-uri           "/auth/magic-link"
+                             :request-uri          "/auth/magic-link/request"
+                             :secret               test-secret
+                             :consume-nonce        (constantly true)
+                             :store-nonce          (fn [_ _ _])
+                             :send-fn              (fn [_ _])
+                             :login-fn             (fn [{:keys [email]}]
+                                                     {:user-id 1 :email email})
+                             :session-key          :oie/user
+                             :success-redirect-uri "/"
+                             :token-ttl            600000
+                             :clock                test-clock}
+                            opts)))
+
+  ;; POST to request-uri → 200
+  (:status (let [handler (make-request-handler {})]
+             (handler {:uri "/auth/magic-link/request" :request-method :post
+                       :params {"email" "alice@example.com"}})))
+  ;; => 200
+
+  ;; store-nonce receives nonce, email, and expires-at
+  (let [stored  (atom nil)
+        handler (make-request-handler
+                 {:store-nonce (fn [nonce email expires-at]
+                                 (reset! stored {:nonce nonce :email email :expires-at expires-at}))})]
+    (handler {:uri "/auth/magic-link/request" :request-method :post
+              :params {"email" "alice@example.com"}})
+    [(string? (:nonce @stored))
+     (:email @stored)
+     (:expires-at @stored)])
+  ;; => [true "alice@example.com" 601000]
+
+  ;; send-fn receives email and a valid token
+  (let [sent    (atom nil)
+        handler (make-request-handler
+                 {:send-fn (fn [email token] (reset! sent {:email email :token token}))})]
+    (handler {:uri "/auth/magic-link/request" :request-method :post
+              :params {"email" "alice@example.com"}})
+    [(:email @sent)
+     (string? (:token @sent))
+     (= 2 (count (str/split (:token @sent) #"\.")))])
+  ;; => ["alice@example.com" true true]
+
+  ;; missing email → 400
+  (let [handler (make-request-handler {})]
+    [(:status (handler {:uri "/auth/magic-link/request" :request-method :post :params {}}))
+     (get-in (handler {:uri "/auth/magic-link/request" :request-method :post :params {}}) [:body :type])])
+  ;; => [400 :missing-email]
+
+  ;; GET to request-uri → pass through
+  (let [handler (make-request-handler {})]
+    (:status (handler {:uri "/auth/magic-link/request" :request-method :get
+                       :params {"email" "alice@example.com"}})))
+  ;; => 200
+
+  ;; request-uri not configured → POST passes through
+  (let [handler (make-handler {})]
+    (:status (handler {:uri "/auth/magic-link/request" :request-method :post
+                       :params {"email" "alice@example.com"}})))
+  ;; => 200
+
+  ;; custom request-param
+  (let [sent    (atom nil)
+        handler (make-request-handler
+                 {:request-param "user_email"
+                  :send-fn (fn [email _] (reset! sent email))})]
+    (handler {:uri "/auth/magic-link/request" :request-method :post
+              :params {"user_email" "bob@example.com"}})
+    @sent)
+  ;; => "bob@example.com"
+
+  ;; full round-trip: request → verify
+  (let [nonces  (atom #{})
+        sent    (atom nil)
+        handler (make-request-handler
+                 {:store-nonce   (fn [nonce _ _] (swap! nonces conj nonce))
+                  :consume-nonce (fn [nonce] (when (@nonces nonce)
+                                               (swap! nonces disj nonce)
+                                               true))
+                  :send-fn       (fn [_ token] (reset! sent token))})]
+    (handler {:uri "/auth/magic-link/request" :request-method :post
+              :params {"email" "alice@example.com"}})
+    (let [resp (handler {:uri "/auth/magic-link" :request-method :get
+                         :query-params {"token" @sent} :session {}})]
+      [(:status resp)
+       (get-in resp [:session :oie/user])]))
+  ;; => [302 {:user-id 1, :email "alice@example.com"}]
   )
