@@ -1,17 +1,14 @@
-name: CI
+name: Deploy to Clojars
 
 on:
   push:
-    branches:
-      - '**'
-    tags-ignore:
-      - '**'
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*'
 
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v6
 
@@ -35,8 +32,14 @@ jobs:
             ~/.gitlibs
           key: ${{ runner.os }}-deps-${{ hashFiles('**/deps.edn') }}
 
-      - name: Format check
-        run: bb fmt-check
+      - name: Deploy to Clojars
+        env:
+          CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
+          CLOJARS_PASSWORD: ${{ secrets.CLOJARS_PASSWORD }}
+        run: bb deploy
 
-      - name: Run tests
-        run: bb test
+      - name: Summary
+        run: |
+          echo "### Clojars Deploy Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
