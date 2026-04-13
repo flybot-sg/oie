@@ -1,5 +1,10 @@
 (ns flybot.oie.session)
 
+(def session-key
+  "Key under which the authenticated identity is stored in the Ring session.
+   Used internally by session-strategy, wrap-oauth2, and wrap-magic-link."
+  ::user)
+
 (defn logout-handler
   "Returns a Ring handler that clears the session on POST and redirects.
    Returns 405 for non-POST requests.

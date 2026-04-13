@@ -13,7 +13,6 @@
   {:status 200
    :body   (core/get-identity req)})
 
-(def ^:private session-key :oie/user)
 (def ^:private clock (constantly 1000))
 
 (deftest oauth2-and-bearer-token-flow
@@ -21,8 +20,7 @@
         bearer-strat    (bearer/bearer-token-strategy
                          {:verify-token #(get @token-store %)
                           :clock        clock})
-        sess-strat      (session-strat/session-strategy
-                         {:session-key session-key})
+        sess-strat      (session-strat/session-strategy)
         app             (-> api-handler
                             (core/wrap-authenticate [bearer-strat sess-strat])
                             (oauth2/wrap-oauth2
@@ -34,7 +32,6 @@
                                        :scopes              [:openid]
                                        :client-id           "test-id"
                                        :client-secret       "test-secret"
-                                       :session-key         session-key
                                        :fetch-profile-fn    (fn [_tokens]
                                                               {:email "alice@example.com"
                                                                :name  "Alice"})
@@ -57,11 +54,11 @@
         (is (= 302 (:status resp)))
         (is (= "/" (get-in resp [:headers "Location"])))
         (is (= {:user-id 1 :email "alice@example.com" :roles #{:user}}
-               (get-in resp [:session session-key])))
+               (get-in resp [:session ::session/user])))
         (is (not (contains? (:session resp) ::ring-oauth2/access-tokens)))))
 
     (testing "session-authenticated request succeeds"
-      (let [session {session-key {:user-id 1 :email "alice@example.com" :roles #{:user}}}
+      (let [session {::session/user {:user-id 1 :email "alice@example.com" :roles #{:user}}}
             resp    (app {:uri "/api" :headers {} :session session})]
         (is (= 200 (:status resp)))
         (is (= {:user-id 1 :email "alice@example.com" :roles #{:user}}
@@ -81,14 +78,14 @@
             hash       (token/hash-token raw)
             token-data {:username "bob" :roles #{:admin} :expires-at 2000 :revoked-at nil}
             _          (swap! token-store assoc hash token-data)
-            session    {session-key {:user-id 1 :email "alice@example.com"}}
+            session    {::session/user {:user-id 1 :email "alice@example.com"}}
             resp       (app {:uri "/api" :headers {"authorization" (str "Bearer " (:value raw))}
                              :session session})]
         (is (= token-data (:body resp)))))
 
     (testing "logout clears session and redirects"
       (let [resp (logout-handler {:request-method :post
-                                  :session        {session-key {:user-id 1}}})]
+                                  :session        {::session/user {:user-id 1}}})]
         (is (= 302 (:status resp)))
         (is (= "/" (get-in resp [:headers "Location"])))
         (is (nil? (:session resp)))))
@@ -103,7 +100,7 @@
                (:body resp)))))))
 
 (deftest oauth2-only-flow
-  (let [sess-strat     (session-strat/session-strategy {:session-key session-key})
+  (let [sess-strat     (session-strat/session-strategy)
         google-profile {:authorize-uri       "https://example.com/authorize"
                         :access-token-uri    "https://example.com/token"
                         :redirect-uri        "/oauth2/google/callback"
@@ -112,7 +109,6 @@
                         :scopes              [:openid]
                         :client-id           "test-id"
                         :client-secret       "test-secret"
-                        :session-key         session-key
                         :fetch-profile-fn    (constantly {:email "alice@example.com"})
                         :login-fn            (fn [profile]
                                                {:user-id 1 :email (:email profile)})
@@ -153,7 +149,7 @@
 
     (testing "logout clears session and redirects"
       (let [resp (logout-handler {:request-method :post
-                                  :session        {session-key {:user-id 1}}})]
+                                  :session        {::session/user {:user-id 1}}})]
         (is (= 302 (:status resp)))
         (is (= "/" (get-in resp [:headers "Location"])))
         (is (nil? (:session resp)))))))
@@ -196,13 +192,13 @@
 
     (testing "session has no effect without session strategy"
       (is (= 401 (:status (app {:headers {}
-                                :session {session-key {:user-id 1}}})))))))
+                                :session {::session/user {:user-id 1}}})))))))
 
 (deftest magic-link-flow
   (let [secret      "test-secret"
         nonce-store (atom #{})
         sent-tokens (atom {})
-        sess-strat  (session-strat/session-strategy {:session-key session-key})
+        sess-strat  (session-strat/session-strategy)
         app         (-> (core/wrap-authenticate api-handler [sess-strat])
                         (magic-link/wrap-magic-link
                          {:verify-uri          "/auth/magic-link"
@@ -215,7 +211,6 @@
                           :send-fn             (fn [email token] (swap! sent-tokens assoc email token))
                           :login-fn            (fn [{:keys [email]}]
                                                  {:user-id 1 :email email})
-                          :session-key         session-key
                           :success-redirect-uri "/home"
                           :token-ttl           600000
                           :clock               clock}))]
@@ -239,7 +234,7 @@
         (is (= 302 (:status resp)))
         (is (= "/home" (get-in resp [:headers "Location"])))
         (is (= {:user-id 1 :email "alice@example.com"}
-               (get-in resp [:session session-key])))))
+               (get-in resp [:session ::session/user])))))
 
     (testing "replay of same token returns 401"
       (let [token (@sent-tokens "alice@example.com")
@@ -251,7 +246,7 @@
         (is (= :already-used (get-in resp [:body :type])))))
 
     (testing "session-authenticated request succeeds after login"
-      (let [session-data {session-key {:user-id 1 :email "alice@example.com"}}
+      (let [session-data {::session/user {:user-id 1 :email "alice@example.com"}}
             resp         (app {:uri "/api" :headers {} :session session-data})]
         (is (= 200 (:status resp)))
         (is (= {:user-id 1 :email "alice@example.com"} (:body resp)))))))

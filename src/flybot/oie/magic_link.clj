@@ -1,5 +1,6 @@
 (ns flybot.oie.magic-link
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [flybot.oie.session :as session])
   (:import [javax.crypto Mac]
            [javax.crypto.spec SecretKeySpec]
            [java.security MessageDigest]
@@ -80,7 +81,7 @@
 
 (defn- handle-verify
   [request {:keys [secret token-param clock consume-nonce login-fn
-                   session-key success-redirect-uri]}]
+                   success-redirect-uri]}]
   (if-let [token (get-in request [:query-params token-param])]
     (let [result (verify-token secret token (clock) consume-nonce)
           ident  (some-> (:verified result) login-fn)]
@@ -96,7 +97,7 @@
          :headers {"Location" (if (fn? success-redirect-uri)
                                 (success-redirect-uri request)
                                 success-redirect-uri)}
-         :session (assoc (:session request) session-key ident)}))
+         :session (assoc (:session request) session/session-key ident)}))
     {:status 401 :body {:type :missing-token :message "No magic link token provided."}}))
 
 (defn- handle-request
@@ -126,8 +127,8 @@
    - `store-nonce` — `(fn [nonce email expires-at])`, persist nonce
    - `send-fn` — `(fn [email token])`, deliver the token to the user
    - `login-fn` — `(fn [profile] -> identity | nil)`, app-level authorization
-   - `session-key` — key to store identity in session
    - `success-redirect-uri` — string or `(fn [req] -> uri)`
+   Identity is stored in session under `::session/user`.
    - `token-ttl` — token lifetime in ms
    - `token-param` — query param name, defaults to `\"token\"`
    - `request-param` — param name for email, defaults to `\"email\"`
@@ -162,7 +163,6 @@
                              :consume-nonce         (constantly true)
                              :login-fn              (fn [{:keys [email]}]
                                                       {:user-id 1 :email email})
-                             :session-key           :oie/user
                              :success-redirect-uri  "/"
                              :clock                 test-clock}
                             opts)))
@@ -174,7 +174,7 @@
         resp    (handler {:uri "/auth/magic-link" :request-method :get :query-params {"token" token} :session {}})]
     [(:status resp)
      (get-in resp [:headers "Location"])
-     (get-in resp [:session :oie/user])])
+     (get-in resp [:session ::session/user])])
   ;; => [302 "/" {:user-id 1, :email "alice@example.com"}]
 
   ;; expired token → 401
@@ -301,7 +301,6 @@
                              :send-fn              (fn [_ _])
                              :login-fn             (fn [{:keys [email]}]
                                                      {:user-id 1 :email email})
-                             :session-key          :oie/user
                              :success-redirect-uri "/"
                              :token-ttl            600000
                              :clock                test-clock}
@@ -372,6 +371,6 @@
     (let [resp (handler {:uri "/auth/magic-link" :request-method :get
                          :query-params {"token" @sent} :session {}})]
       [(:status resp)
-       (get-in resp [:session :oie/user])]))
+       (get-in resp [:session ::session/user])]))
   ;; => [302 {:user-id 1, :email "alice@example.com"}]
   )

@@ -1,6 +1,7 @@
 (ns flybot.oie.oauth2
   (:require [cheshire.core :as json]
             [clojure.string :as str]
+            [flybot.oie.session :as session]
             [ring.middleware.oauth2 :as ring-oauth2])
   (:import [java.util Base64]))
 
@@ -46,26 +47,29 @@
   )
 
 (defn- handle-landing
-  [request {:keys [provider-key session-key fetch-profile-fn
+  [request {:keys [provider-key fetch-profile-fn
                    login-fn success-redirect-uri]}]
-  (let [profile (fetch-profile-fn (get-in request [:oauth2/access-tokens provider-key]))
-        ident   (login-fn profile)
-        session (dissoc (:session request) ::ring-oauth2/access-tokens)]
-    (if ident
-      {:status  302
-       :headers {"Location" (if (fn? success-redirect-uri)
-                              (success-redirect-uri request)
-                              success-redirect-uri)}
-       :session (assoc session session-key ident)}
-      {:status  403
-       :session session})))
+  (if-let [tokens (get-in request [:oauth2/access-tokens provider-key])]
+    (let [profile (fetch-profile-fn tokens)
+          ident   (login-fn profile)
+          sess    (dissoc (:session request) ::ring-oauth2/access-tokens)]
+      (if ident
+        {:status  302
+         :headers {"Location" (if (fn? success-redirect-uri)
+                                (success-redirect-uri request)
+                                success-redirect-uri)}
+         :session (assoc sess session/session-key ident)}
+        {:status  403
+         :session sess}))
+    {:status 401
+     :body   {:type :missing-token :message "OAuth2 access token not found."}}))
 
 (defn- build-landing-configs [profiles]
   (reduce-kv
    (fn [m provider-key profile]
      (assoc m (:landing-uri profile)
             (select-keys (assoc profile :provider-key provider-key)
-                         [:provider-key :session-key :fetch-profile-fn
+                         [:provider-key :fetch-profile-fn
                           :login-fn :success-redirect-uri])))
    {}
    profiles))
@@ -80,17 +84,15 @@
      :authorize-uri, :access-token-uri, :client-id, :client-secret,
      :scopes, :launch-uri, :redirect-uri, :landing-uri
    Plus oie keys:
-     :session-key          — key to store identity in session
      :fetch-profile-fn     — `(fn [token-map] -> profile)`
      :login-fn             — `(fn [profile] -> identity | nil)`
-     :success-redirect-uri — string or `(fn [req] -> uri)`"
+     :success-redirect-uri — string or `(fn [req] -> uri)`
+   Identity is stored in session under `::session/user`."
   [handler profiles]
   (let [landing-configs (build-landing-configs profiles)
         interceptor     (fn [request]
                           (if-let [config (get landing-configs (:uri request))]
-                            (if (get-in request [:oauth2/access-tokens (:provider-key config)])
-                              (handle-landing request config)
-                              (handler request))
+                            (handle-landing request config)
                             (handler request)))]
     (ring-oauth2/wrap-oauth2 interceptor profiles)))
 
@@ -105,7 +107,6 @@
      :scopes              [:openid]
      :client-id           "test-id"
      :client-secret       "test-secret"
-     :session-key         :oie/user
      :fetch-profile-fn    (fn [_tokens]
                             {:email "alice@example.com"
                              :name  "Alice"})
@@ -130,7 +131,7 @@
         resp    (handler (landing-request {:token "access-tok"}))]
     [(:status resp)
      (get-in resp [:headers "Location"])
-     (get-in resp [:session :oie/user])
+     (get-in resp [:session ::session/user])
      (contains? (:session resp) ::ring-oauth2/access-tokens)])
   ;; => [302 "/" {:user-id 1, :email "alice@example.com"} false]
 
@@ -162,10 +163,10 @@
      (contains? (:session resp) ::ring-oauth2/access-tokens)])
   ;; => [403 false]
 
-  ;; landing-uri without tokens → pass through to handler
+  ;; landing-uri without tokens → 401
   (let [handler (make-handler {})]
     (:status (handler {:uri "/oauth2/test/success" :request-method :get :session {}})))
-  ;; => 200
+  ;; => 401
 
   ;; non-landing-uri → pass through
   (let [handler (make-handler {})]
