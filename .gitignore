@@ -4,6 +4,7 @@ target/
 .clj-kondo/.cache/
 .clj-kondo/*/
 .lsp/
+.vscode/
 *.class
 *.jar
 **/.calva/**

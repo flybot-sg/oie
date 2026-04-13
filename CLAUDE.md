@@ -2,7 +2,7 @@
 
 Ring-based authentication and authorization library for Clojure. Strategy-based architecture where each auth mechanism is composable middleware.
 
-- **GitLab**: https://github.com/flybot-sg/oie
+- **GitHub**: https://github.com/flybot-sg/oie
 
 ## Architecture
 

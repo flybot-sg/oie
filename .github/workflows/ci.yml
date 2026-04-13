@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Clojure
+        uses: DeLaGuardo/setup-clojure@13.5
+        with:
+          cli: latest
+          bb: latest
+
+      - name: Cache deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/deps.edn') }}
+
+      - name: Format check
+        run: bb fmt-check
+
+      - name: Run tests
+        run: bb test
