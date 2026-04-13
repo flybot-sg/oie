@@ -8,4 +8,16 @@
   fmt-check {:doc  "Check code format"
              :task (clojure "-T:cljfmt" "check")}
   fmt-fix   {:doc  "Fix code format"
-             :task (clojure "-T:cljfmt" "fix")}}}
+             :task (clojure "-T:cljfmt" "fix")}
+  jar       {:doc  "Build JAR"
+             :task (clojure "-T:build" "jar")}
+  deploy    {:doc  "Deploy to Clojars"
+             :task (clojure "-T:build" "deploy")}
+  outdated  {:doc  "Check outdated deps"
+             :task (clojure "-Sdeps" "{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}"
+                            "-M" "-m" "antq.core")}
+  tag       {:doc  "Create and push version tag"
+             :task (let [version (-> (slurp "resources/version.edn") edn/read-string :version)
+                         tag     (str "v" version)]
+                     (shell "git" "tag" tag)
+                     (shell "git" "push" "origin" tag))}}}

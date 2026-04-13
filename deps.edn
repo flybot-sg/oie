@@ -1,16 +1,19 @@
 {:paths ["src" "resources"]
  :deps  {org.clojure/clojure              {:mvn/version "1.12.4"}
-         cheshire/cheshire                {:mvn/version "5.13.0"}
+         cheshire/cheshire                {:mvn/version "6.2.0"}
          metosin/malli                    {:mvn/version "0.20.1"}
          io.github.studer-l/ring-oauth2   {:git/sha "db75c05284aa2a3458025ebb124efe9d3c14439b"}}
 
  :aliases
  {:dev    {:extra-paths ["test"]
-           :extra-deps  {nrepl/nrepl                            {:mvn/version "1.5.2"}
+           :extra-deps  {nrepl/nrepl                            {:mvn/version "1.6.0"}
                          cider/cider-nrepl                      {:mvn/version "0.58.0"}
                          io.github.robertluo/rich-comment-tests #:git{:tag "v1.1.78" :sha "c7d044f"}}}
   :test   {:extra-paths ["test"]
            :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
            :main-opts   ["-m" "kaocha.runner"]}
   :cljfmt {:deps       {io.github.weavejester/cljfmt {:git/tag "0.16.3" :git/sha "f138389"}}
-           :ns-default cljfmt.tool}}}
+           :ns-default cljfmt.tool}
+  :build  {:deps       {io.github.clojure/tools.build {:mvn/version "0.10.13"}
+                        slipset/deps-deploy           {:mvn/version "0.2.3"}}
+           :ns-default build}}}

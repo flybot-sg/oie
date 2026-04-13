@@ -55,6 +55,10 @@ All other namespaces have no internal dependencies.
 - `bb test` — run Kaocha + RCT
 - `bb fmt-check` — check code format
 - `bb fmt-fix` — fix code format
+- `bb jar` — build JAR
+- `bb deploy` — deploy to Clojars
+- `bb tag` — create and push version tag
+- `bb outdated` — check outdated deps
 
 ## Project State
 

@@ -1,6 +1,28 @@
 # oie
 
+[![Clojars](https://img.shields.io/clojars/v/sg.flybot/oie.svg)](https://clojars.org/sg.flybot/oie)
+![CI](https://github.com/flybot-sg/oie/actions/workflows/ci.yml/badge.svg)
+![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)
+
 Ring-based authentication and authorization library for Clojure. Strategy-based, composable middleware with pluggable storage.
+
+## Rationale
+
+Authentication in Ring apps typically means either a heavyweight framework that imposes its own session/user model, or ad-hoc middleware scattered across your codebase. oie takes a different approach:
+
+- **Strategies as data**: each auth mechanism is a plain map with an `:authenticate` function, not a class hierarchy or protocol implementation
+- **Composable middleware**: login flows (OAuth2, magic link) compose as outer middleware around a single `wrap-authenticate` that tries strategies in order
+- **Pluggable storage**: all persistence is injected via callbacks (`verify-token`, `consume-nonce`, `login-fn`), so the library never touches your database
+- **Single session key**: all session-aware middleware agrees on one namespace-qualified key, eliminating misconfiguration between components
+
+**By design**: oie handles authentication (who are you?) and provides a predicate for authorization (can you do this?). It does not manage users, hash passwords, or send emails. Those are your app's concerns, injected via callbacks.
+
+## Installation
+
+```clojure
+;; deps.edn
+{:deps {sg.flybot/oie {:mvn/version "RELEASE"}}}
+```
 
 ## Quick Start
 
