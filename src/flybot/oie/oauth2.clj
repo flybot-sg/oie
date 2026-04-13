@@ -1,4 +1,4 @@
-(ns flybot.oie.oauth2
+(ns ^:no-doc flybot.oie.oauth2
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [flybot.oie.session :as session]
