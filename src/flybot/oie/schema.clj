@@ -22,10 +22,6 @@
    [:verify-token fn?]
    [:clock {:optional true} fn?]])
 
-(def session-strategy-schema
-  [:map
-   [:session-key :keyword]])
-
 (def logout-handler-schema
   [:map
    [:redirect-uri {:optional true} :string]])
@@ -43,7 +39,6 @@
    [:store-nonce fn?]
    [:send-fn fn?]
    [:login-fn fn?]
-   [:session-key :keyword]
    [:success-redirect-uri redirect-uri-schema]
    [:token-ttl pos-int?]
    [:token-param {:optional true} :string]
@@ -60,7 +55,6 @@
    [:launch-uri :string]
    [:redirect-uri :string]
    [:landing-uri :string]
-   [:session-key :keyword]
    [:fetch-profile-fn fn?]
    [:login-fn fn?]
    [:success-redirect-uri redirect-uri-schema]])
@@ -80,18 +74,6 @@
 
 ^:rct/test
 (comment
-  ;; valid config returns the value
-  (validate-config session-strategy-schema {:session-key :oie/user} "session-strategy")
-  ;; => {:session-key :oie/user}
-
-  ;; missing required key throws
-  (try
-    (validate-config session-strategy-schema {} "session-strategy")
-    (catch Exception e
-      [(-> e ex-data :context)
-       (-> e ex-data :errors :session-key)]))
-  ;; => ["session-strategy" ["missing required key"]]
-
   ;; wrong type throws
   (try
     (validate-config bearer-token-strategy-schema {:verify-token "not-a-fn"} "bearer-token-strategy")
@@ -107,7 +89,7 @@
   (validate-config wrap-magic-link-schema
                    {:verify-uri "/auth" :request-uri "/auth/request"
                     :secret "s" :consume-nonce identity :store-nonce identity
-                    :send-fn identity :login-fn identity :session-key :oie/user
+                    :send-fn identity :login-fn identity
                     :success-redirect-uri "/" :token-ttl 600000}
                    "wrap-magic-link")
   ;=>> {:verify-uri "/auth"}
@@ -117,14 +99,14 @@
     (validate-config wrap-magic-link-schema {:verify-uri "/auth"} "wrap-magic-link")
     (catch Exception e
       (sort (keys (-> e ex-data :errors)))))
-  ;; => (:consume-nonce :login-fn :request-uri :secret :send-fn :session-key :store-nonce :success-redirect-uri :token-ttl)
+  ;; => (:consume-nonce :login-fn :request-uri :secret :send-fn :store-nonce :success-redirect-uri :token-ttl)
 
   ;; valid oauth2 profiles pass
   (validate-config wrap-oauth2-schema
                    {:google {:authorize-uri "https://a" :access-token-uri "https://t"
                              :client-id "id" :client-secret "s" :scopes [:openid]
                              :launch-uri "/l" :redirect-uri "/r" :landing-uri "/land"
-                             :session-key :oie/user :fetch-profile-fn identity
+                             :fetch-profile-fn identity
                              :login-fn identity :success-redirect-uri "/"}}
                    "wrap-oauth2")
   ;=>> {:google {:authorize-uri "https://a"}}
