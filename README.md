@@ -21,7 +21,9 @@ Authentication in Ring apps typically means either a heavyweight framework that 
 
 ```clojure
 ;; deps.edn
-{:deps {sg.flybot/oie {:mvn/version "RELEASE"}}}
+{:deps {sg.flybot/oie {:mvn/version "RELEASE"}
+        ;; Required if you use wrap-oauth2:
+        io.github.studer-l/ring-oauth2 {:git/sha "db75c05284aa2a3458025ebb124efe9d3c14439b"}}}
 ```
 
 ## Quick Start
