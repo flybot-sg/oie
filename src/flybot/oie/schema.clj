@@ -17,6 +17,10 @@
 (def wrap-authenticate-schema
   [:sequential strategy-schema])
 
+(def wrap-authenticate-opts-schema
+  [:map
+   [:allow-anonymous? {:optional true} :boolean]])
+
 (def bearer-token-strategy-schema
   [:map
    [:verify-token fn?]
@@ -116,4 +120,23 @@
                    [{:authenticate identity}]
                    "wrap-authenticate")
   ;=>> [{:authenticate fn?}]
+
+  ;; wrap-authenticate opts validates allow-anonymous?
+  (validate-config wrap-authenticate-opts-schema
+                   {:allow-anonymous? true}
+                   "wrap-authenticate-opts")
+  ;; => {:allow-anonymous? true}
+
+  ;; wrap-authenticate opts rejects non-boolean
+  (try
+    (validate-config wrap-authenticate-opts-schema
+                     {:allow-anonymous? "yes"}
+                     "wrap-authenticate-opts")
+    (catch Exception e
+      (-> e ex-data :errors :allow-anonymous?)))
+  ;; => ["should be a boolean"]
+
+  ;; empty opts map is valid
+  (validate-config wrap-authenticate-opts-schema {} "wrap-authenticate-opts")
+  ;; => {}
   )

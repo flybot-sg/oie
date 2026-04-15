@@ -60,6 +60,45 @@
           resp    (handler {})]
       (is (= {:user "carol"} (sut/get-identity resp))))))
 
+(deftest wrap-authenticate-allow-anonymous-test
+  (testing "allow-anonymous? true: all nil passes through to handler"
+    (let [s       {:authenticate (fn [_] nil)}
+          handler (sut/wrap-authenticate identity [s] {:allow-anonymous? true})
+          resp    (handler {})]
+      (is (nil? (sut/get-identity resp)))))
+
+  (testing "allow-anonymous? true: strategy error still returns 401"
+    (let [s       {:authenticate (fn [_] {:error {:type :bad}})}
+          handler (sut/wrap-authenticate identity [s] {:allow-anonymous? true})
+          resp    (handler {})]
+      (is (= 401 (:status resp)))))
+
+  (testing "allow-anonymous? true: strategy error uses custom unauthorized fn"
+    (let [s       {:authenticate (fn [_] {:error {:type :bad}})
+                   :unauthorized (fn [_req e] {:status 401 :body e})}
+          handler (sut/wrap-authenticate identity [s] {:allow-anonymous? true})
+          resp    (handler {})]
+      (is (= 401 (:status resp)))
+      (is (= {:type :bad} (:body resp)))))
+
+  (testing "allow-anonymous? true: successful auth still assocs identity"
+    (let [s       {:authenticate (fn [_] {:authenticated {:user "alice"}})}
+          handler (sut/wrap-authenticate identity [s] {:allow-anonymous? true})
+          resp    (handler {})]
+      (is (= {:user "alice"} (sut/get-identity resp)))))
+
+  (testing "explicit allow-anonymous? false returns 401 on all nil"
+    (let [s       {:authenticate (fn [_] nil)}
+          handler (sut/wrap-authenticate identity [s] {:allow-anonymous? false})
+          resp    (handler {})]
+      (is (= 401 (:status resp)))))
+
+  (testing "default (no opts) returns 401 on all nil — backwards compatible"
+    (let [s       {:authenticate (fn [_] nil)}
+          handler (sut/wrap-authenticate identity [s])
+          resp    (handler {})]
+      (is (= 401 (:status resp))))))
+
 (deftest get-identity-test
   (testing "returns nil for unauthenticated request"
     (is (nil? (sut/get-identity {})))))

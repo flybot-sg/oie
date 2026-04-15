@@ -194,6 +194,39 @@
       (is (= 401 (:status (app {:headers {}
                                 :session {::session/user {:user-id 1}}})))))))
 
+(deftest mixed-public-authenticated-flow
+  (let [token-store  (atom {})
+        bearer-strat (bearer/bearer-token-strategy
+                      {:verify-token #(get @token-store %)
+                       :clock        clock})
+        sess-strat   (session-strat/session-strategy)
+        app          (core/wrap-authenticate api-handler
+                                             [bearer-strat sess-strat]
+                                             {:allow-anonymous? true})]
+
+    (testing "anonymous request passes through with no identity"
+      (let [resp (app {:uri "/public" :headers {} :session {}})]
+        (is (= 200 (:status resp)))
+        (is (nil? (:body resp)))))
+
+    (testing "bearer token still authenticates"
+      (let [raw  (token/generate-token "cli_")
+            hash (token/hash-token raw)
+            data {:username "alice" :roles #{:user} :expires-at 2000 :revoked-at nil}
+            _    (swap! token-store assoc hash data)
+            resp (app {:uri "/api" :headers {"authorization" (str "Bearer " (:value raw))} :session {}})]
+        (is (= 200 (:status resp)))
+        (is (= data (:body resp)))))
+
+    (testing "invalid bearer token still returns 401"
+      (is (= 401 (:status (app {:uri "/api" :headers {"authorization" "Bearer bad-token"} :session {}})))))
+
+    (testing "session still authenticates"
+      (let [session {::session/user {:user-id 1 :email "alice@example.com"}}
+            resp    (app {:uri "/api" :headers {} :session session})]
+        (is (= 200 (:status resp)))
+        (is (= {:user-id 1 :email "alice@example.com"} (:body resp)))))))
+
 (deftest magic-link-flow
   (let [secret      "test-secret"
         nonce-store (atom #{})
