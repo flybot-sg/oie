@@ -26,6 +26,10 @@
    [:verify-token fn?]
    [:clock {:optional true} fn?]])
 
+(def session-strategy-schema
+  [:map
+   [:verify {:optional true} fn?]])
+
 (def logout-handler-schema
   [:map
    [:redirect-uri {:optional true} :string]])
@@ -139,4 +143,19 @@
   ;; empty opts map is valid
   (validate-config wrap-authenticate-opts-schema {} "wrap-authenticate-opts")
   ;; => {}
+
+  ;; session-strategy: empty opts is valid
+  (validate-config session-strategy-schema {} "session-strategy")
+  ;; => {}
+
+  ;; session-strategy: verify fn is valid
+  (validate-config session-strategy-schema {:verify identity} "session-strategy")
+  ;=>> {:verify fn?}
+
+  ;; session-strategy: non-fn verify is rejected
+  (try
+    (validate-config session-strategy-schema {:verify "not-a-fn"} "session-strategy")
+    (catch Exception e
+      (-> e ex-data :errors :verify)))
+  ;; => ["should be a fn"]
   )

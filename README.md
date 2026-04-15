@@ -84,11 +84,17 @@ Reads `Authorization: Bearer <token>` header. Hashes the raw token (SHA-256) bef
 
 ### Session
 
-Reads identity from the Ring session under key `::session/user`. No configuration.
+Reads identity from the Ring session under key `::session/user`.
 
 ```clojure
 (session-strat/session-strategy)
+
+;; With optional verify fn for re-validation on every request:
+(session-strat/session-strategy
+ {:verify (fn [identity] ...)})  ;; -> identity | nil (optional)
 ```
+
+`verify` is called with the session identity on every request. Return a (possibly enriched) identity to authenticate, or nil to treat the session as stale and skip to the next strategy. When omitted, the session identity is used as-is.
 
 ## Login Flows
 
@@ -202,7 +208,7 @@ Malli schemas for all middleware configs. Call at system startup for early error
 ;; => my-config if valid, throws ex-info with humanized errors if not
 ```
 
-Available schemas: `strategy-schema`, `wrap-authenticate-schema`, `wrap-authenticate-opts-schema`, `bearer-token-strategy-schema`, `logout-handler-schema`, `session-timeout-handler-schema`, `wrap-magic-link-schema`, `wrap-oauth2-schema`.
+Available schemas: `strategy-schema`, `wrap-authenticate-schema`, `wrap-authenticate-opts-schema`, `bearer-token-strategy-schema`, `session-strategy-schema`, `logout-handler-schema`, `session-timeout-handler-schema`, `wrap-magic-link-schema`, `wrap-oauth2-schema`.
 
 ## Development
 
