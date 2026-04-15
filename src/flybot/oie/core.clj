@@ -28,15 +28,28 @@
    - `{:error error}`        — auth attempted but failed
    - `nil`                   — not applicable, try next strategy
    Optional `:unauthorized` `(fn [req error])` handles rejection.
-   Only called when the strategy returned an error."
-  [handler strategies]
-  (fn [req]
-    (let [result (try-strategies strategies req)]
-      (if (:authenticated result)
-        (handler (assoc req identity-key (:authenticated result)))
-        (if-let [unauthorized-fn (:unauthorized (::strategy result))]
-          (unauthorized-fn req (::error result))
-          default-401-response)))))
+   Only called when the strategy returned an error.
+
+   Options:
+   - `:allow-anonymous?` (default `false`) — when true and no strategy is
+     applicable (all returned nil), the request passes through to the handler
+     without identity. A strategy error still produces a 401."
+  ([handler strategies]
+   (wrap-authenticate handler strategies {}))
+  ([handler strategies {:keys [allow-anonymous?]}]
+   (fn [req]
+     (let [result (try-strategies strategies req)]
+       (cond
+         (:authenticated result)
+         (handler (assoc req identity-key (:authenticated result)))
+
+         (and (nil? result) allow-anonymous?)
+         (handler req)
+
+         :else
+         (if-let [unauthorized-fn (:unauthorized (::strategy result))]
+           (unauthorized-fn req (::error result))
+           default-401-response))))))
 
 ^:rct/test
 (comment
@@ -126,4 +139,32 @@
   ;; get-identity returns nil for unauthenticated request
   (get-identity {})
   ;; => nil
+
+  ;; allow-anonymous? true: all nil passes through to handler, no identity
+  (let [s       {:authenticate (fn [_] nil)}
+        handler (wrap-authenticate identity [s] {:allow-anonymous? true})
+        resp    (handler {})]
+    (get-identity resp))
+  ;; => nil
+
+  ;; allow-anonymous? true: strategy error still returns 401
+  (let [s       {:authenticate (fn [_] {:error {:type :bad}})}
+        handler (wrap-authenticate identity [s] {:allow-anonymous? true})
+        resp    (handler {})]
+    (:status resp))
+  ;; => 401
+
+  ;; allow-anonymous? true: successful auth still assocs identity
+  (let [s       {:authenticate (fn [_] {:authenticated {:user "alice"}})}
+        handler (wrap-authenticate identity [s] {:allow-anonymous? true})
+        resp    (handler {})]
+    (get-identity resp))
+  ;; => {:user "alice"}
+
+  ;; default (no opts) still returns 401 on all nil
+  (let [s       {:authenticate (fn [_] nil)}
+        handler (wrap-authenticate identity [s])
+        resp    (handler {})]
+    (:status resp))
+  ;; => 401
   )

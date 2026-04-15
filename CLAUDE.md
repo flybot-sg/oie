@@ -16,7 +16,7 @@ wrap-oauth2                  ← ring-oauth2 + landing page interception + sessi
 wrap-magic-link              ← HMAC-signed token creation (POST) + verification (GET) + session
 ```
 
-**Authentication** (`core`): `wrap-authenticate` tries strategies in order, assocs identity into request.
+**Authentication** (`core`): `wrap-authenticate` tries strategies in order, assocs identity into request. Optional `:allow-anonymous?` lets requests through when no strategy applies.
 
 **Session-based entry points** (`oauth2`, `magic-link`): Handle login flows, create sessions. Compose as outer middleware around `wrap-authenticate`.
 

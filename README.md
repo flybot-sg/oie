@@ -60,6 +60,16 @@ Strategies are data maps passed to `wrap-authenticate`. Each strategy's `:authen
 
 First `{:authenticated ...}` wins. Strategies are tried in order.
 
+`wrap-authenticate` accepts an optional third argument — an options map:
+
+```clojure
+(oie/wrap-authenticate handler strategies {:allow-anonymous? true})
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `:allow-anonymous?` | `false` | When true and no strategy is applicable (all returned nil), the request passes through to the handler without identity. A strategy error still produces a 401. |
+
 ### Bearer Token
 
 Reads `Authorization: Bearer <token>` header. Hashes the raw token (SHA-256) before calling the injected lookup function.
@@ -192,7 +202,7 @@ Malli schemas for all middleware configs. Call at system startup for early error
 ;; => my-config if valid, throws ex-info with humanized errors if not
 ```
 
-Available schemas: `strategy-schema`, `wrap-authenticate-schema`, `bearer-token-strategy-schema`, `logout-handler-schema`, `session-timeout-handler-schema`, `wrap-magic-link-schema`, `wrap-oauth2-schema`.
+Available schemas: `strategy-schema`, `wrap-authenticate-schema`, `wrap-authenticate-opts-schema`, `bearer-token-strategy-schema`, `logout-handler-schema`, `session-timeout-handler-schema`, `wrap-magic-link-schema`, `wrap-oauth2-schema`.
 
 ## Development
 
