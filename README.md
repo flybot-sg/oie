@@ -151,11 +151,20 @@ Intercepts two URIs: verification (GET) and token request (POST).
 
 ### Logout
 
-POST-only handler that clears the session and redirects. Apply `wrap-anti-forgery` to protect against CSRF.
+POST-only handler that clears the session. Apply `wrap-anti-forgery` to protect against CSRF.
 
 ```clojure
+;; Redirect (default)
 (session/logout-handler {:redirect-uri "/"})
+
+;; SPA — custom response instead of redirect
+(session/logout-handler {:response-fn (fn [] {:status 200 :body {:authenticated false}})})
 ```
+
+| Option | Default | Description |
+|---|---|---|
+| `:redirect-uri` | `"/"` | Redirect target after logout. Ignored when `:response-fn` is provided. |
+| `:response-fn` | — | Zero-arg fn returning a Ring response map. Session is always cleared regardless of the response. |
 
 ### Session Timeout
 
