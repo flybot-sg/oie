@@ -6,15 +6,22 @@
   ::user)
 
 (defn logout-handler
-  "Returns a Ring handler that clears the session on POST and redirects.
+  "Returns a Ring handler that clears the session on POST.
    Returns 405 for non-POST requests.
    Callers should apply `ring.middleware.anti-forgery/wrap-anti-forgery`
    to protect against cross-site request forgery.
-   `redirect-uri` defaults to \"/\"."
-  [{:keys [redirect-uri] :or {redirect-uri "/"}}]
+
+   Options:
+   - `:response-fn` - zero-arg fn returning a Ring response map. Use for SPAs
+     where a redirect is not useful. Session is always cleared regardless.
+   - `:redirect-uri` - redirect target (default \"/\"). Ignored when
+     `:response-fn` is provided."
+  [{:keys [redirect-uri response-fn] :or {redirect-uri "/"}}]
   (fn [req]
     (if (= :post (:request-method req))
-      {:status 302 :headers {"Location" redirect-uri} :session nil}
+      (if response-fn
+        (assoc (response-fn) :session nil)
+        {:status 302 :headers {"Location" redirect-uri} :session nil})
       {:status 405 :headers {"Allow" "POST"}})))
 
 ^:rct/test
@@ -28,6 +35,21 @@
   (let [handler (logout-handler {})]
     (handler {:request-method :post :session {:user "alice"}}))
   ;; => {:status 302, :headers {"Location" "/"}, :session nil}
+
+  ;; response-fn replaces the redirect
+  (let [handler (logout-handler {:response-fn (fn [] {:status 200 :body {:authenticated false}})})]
+    (handler {:request-method :post :session {:user "alice"}}))
+  ;; => {:status 200, :body {:authenticated false}, :session nil}
+
+  ;; response-fn always clears session even if response includes one
+  (let [handler (logout-handler {:response-fn (fn [] {:status 200 :session {:leftover true}})})]
+    (handler {:request-method :post :session {:user "alice"}}))
+  ;; => {:status 200, :session nil}
+
+  ;; response-fn with non-POST still returns 405
+  (let [handler (logout-handler {:response-fn (fn [] {:status 200 :body {:ok true}})})]
+    (handler {:request-method :get}))
+  ;; => {:status 405, :headers {"Allow" "POST"}}
 
   ;; GET returns 405
   (let [handler (logout-handler {:redirect-uri "/"})]

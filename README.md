@@ -1,8 +1,12 @@
-# oie
-
-[![Clojars](https://img.shields.io/clojars/v/sg.flybot/oie.svg)](https://clojars.org/sg.flybot/oie)
-![CI](https://github.com/flybot-sg/oie/actions/workflows/ci.yml/badge.svg)
-![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)
+<p align="center">
+  <img src="doc/logo.svg" width="96" height="96" alt="oie logo">
+</p>
+<h1 align="center">oie</h1>
+<p align="center">
+  <a href="https://clojars.org/sg.flybot/oie"><img src="https://img.shields.io/clojars/v/sg.flybot/oie.svg" alt="Clojars"></a>
+  <img src="https://github.com/flybot-sg/oie/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/badge/license-Unlicense-blue.svg" alt="License: Unlicense">
+</p>
 
 Ring-based authentication and authorization library for Clojure. Strategy-based, composable middleware with pluggable storage.
 
@@ -151,11 +155,20 @@ Intercepts two URIs: verification (GET) and token request (POST).
 
 ### Logout
 
-POST-only handler that clears the session and redirects. Apply `wrap-anti-forgery` to protect against CSRF.
+POST-only handler that clears the session. Apply `wrap-anti-forgery` to protect against CSRF.
 
 ```clojure
+;; Redirect (default)
 (session/logout-handler {:redirect-uri "/"})
+
+;; SPA — custom response instead of redirect
+(session/logout-handler {:response-fn (fn [] {:status 200 :body {:authenticated false}})})
 ```
+
+| Option | Default | Description |
+|---|---|---|
+| `:redirect-uri` | `"/"` | Redirect target after logout. Ignored when `:response-fn` is provided. |
+| `:response-fn` | — | Zero-arg fn returning a Ring response map. Session is always cleared regardless of the response. |
 
 ### Session Timeout
 
