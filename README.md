@@ -1,8 +1,12 @@
-# oie
-
-[![Clojars](https://img.shields.io/clojars/v/sg.flybot/oie.svg)](https://clojars.org/sg.flybot/oie)
-![CI](https://github.com/flybot-sg/oie/actions/workflows/ci.yml/badge.svg)
-![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)
+<p align="center">
+  <img src="doc/logo.svg" width="96" height="96" alt="oie logo">
+</p>
+<h1 align="center">oie</h1>
+<p align="center">
+  <a href="https://clojars.org/sg.flybot/oie"><img src="https://img.shields.io/clojars/v/sg.flybot/oie.svg" alt="Clojars"></a>
+  <img src="https://github.com/flybot-sg/oie/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/badge/license-Unlicense-blue.svg" alt="License: Unlicense">
+</p>
 
 Ring-based authentication and authorization library for Clojure. Strategy-based, composable middleware with pluggable storage.
 

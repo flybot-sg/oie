@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- body - low aggressive stance -->
+  <ellipse cx="64" cy="82" rx="34" ry="22" fill="#e8f4f8" stroke="#1a1a2e" stroke-width="2.5"/>
+  <!-- raised wing - aggressive display -->
+  <path d="M72 64 Q88 42 98 48 Q94 56 86 66 Q78 60 72 64Z" fill="#2891b8" stroke="#1a1a2e" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M68 68 Q82 48 90 52 Q86 60 80 68 Q74 64 68 68Z" fill="#3da8cb" stroke="#1a1a2e" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- tail feathers - flared up -->
+  <path d="M96 74 Q114 62 112 50" fill="none" stroke="#1a1a2e" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M94 78 Q116 68 112 54" fill="none" stroke="#2891b8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M92 80 Q110 72 108 58" fill="none" stroke="#1a1a2e" stroke-width="2" stroke-linecap="round"/>
+  <!-- neck - thrust forward aggressively -->
+  <path d="M36 76 Q20 58 18 38 Q17 26 22 18" fill="none" stroke="#1a1a2e" stroke-width="9" stroke-linecap="round"/>
+  <path d="M36 76 Q20 58 18 38 Q17 26 22 18" fill="none" stroke="#e8f4f8" stroke-width="5.5" stroke-linecap="round"/>
+  <!-- head - angled forward -->
+  <ellipse cx="24" cy="16" rx="13" ry="11" fill="#e8f4f8" stroke="#1a1a2e" stroke-width="2.5"/>
+  <!-- angry eye -->
+  <circle cx="20" cy="14" r="2.5" fill="#1a1a2e"/>
+  <circle cx="19.2" cy="13.2" r="0.8" fill="#fff"/>
+  <!-- angry brow -->
+  <line x1="16" y1="10" x2="22" y2="11.5" stroke="#1a1a2e" stroke-width="2" stroke-linecap="round"/>
+  <!-- open beak - hissing -->
+  <path d="M11 13 L1 10 L4 14Z" fill="#b59135" stroke="#1a1a2e" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M11 18 L1 22 L4 18Z" fill="#9a7b2d" stroke="#1a1a2e" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- tongue hint -->
+  <path d="M10 16 L5 17" stroke="#d45d5d" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- legs - wide stance -->
+  <line x1="52" y1="100" x2="48" y2="116" stroke="#b59135" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="74" y1="100" x2="78" y2="116" stroke="#b59135" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- feet - planted -->
+  <path d="M40 116 L48 116 L54 116" stroke="#b59135" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <path d="M72 116 L78 116 L86 116" stroke="#b59135" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+</svg>
