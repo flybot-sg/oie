@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="doc/logo.svg" width="96" height="96" alt="oie logo">
+  <img src="docs/logo.svg" width="96" height="96" alt="oie logo">
 </p>
 <h1 align="center">oie</h1>
 <p align="center">
