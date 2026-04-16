@@ -90,6 +90,20 @@
         (is (= "/" (get-in resp [:headers "Location"])))
         (is (nil? (:session resp)))))
 
+    (testing "SPA logout with response-fn returns custom response"
+      (let [spa-logout (session/logout-handler
+                        {:response-fn (fn [] {:status 200 :body {:authenticated false}})})
+            resp       (spa-logout {:request-method :post
+                                    :session        {::session/user {:user-id 1}}})]
+        (is (= 200 (:status resp)))
+        (is (= {:authenticated false} (:body resp)))
+        (is (nil? (:session resp)))))
+
+    (testing "SPA logout with non-POST returns 405"
+      (let [spa-logout (session/logout-handler
+                        {:response-fn (fn [] {:status 200 :body {:ok true}})})]
+        (is (= 405 (:status (spa-logout {:request-method :get}))))))
+
     (testing "GET logout returns 405"
       (is (= 405 (:status (logout-handler {:request-method :get})))))
 

@@ -32,7 +32,8 @@
 
 (def logout-handler-schema
   [:map
-   [:redirect-uri {:optional true} :string]])
+   [:redirect-uri {:optional true} :string]
+   [:response-fn {:optional true} fn?]])
 
 (def session-timeout-handler-schema
   [:map
@@ -92,6 +93,17 @@
   ;; optional keys are not required
   (validate-config logout-handler-schema {} "logout-handler")
   ;; => {}
+
+  ;; logout-handler with response-fn is valid
+  (validate-config logout-handler-schema {:response-fn identity} "logout-handler")
+  ;=>> {:response-fn fn?}
+
+  ;; logout-handler rejects non-fn response-fn
+  (try
+    (validate-config logout-handler-schema {:response-fn "not-a-fn"} "logout-handler")
+    (catch Exception e
+      (-> e ex-data :errors :response-fn)))
+  ;; => ["should be a fn"]
 
   ;; valid magic-link config passes
   (validate-config wrap-magic-link-schema
