@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`session/return-to-key`**: Session key holding the post-login redirect path
 - **`session/safe-return-path`**: Validates a redirect target as a safe same-origin path
 
+### Changed
+- **`wrap-oauth2` landing without tokens**: The 401 response now clears OAuth2 flow state (access tokens, pending `return-to`) from the session instead of leaving it untouched
+
 ## [0.2.0](https://github.com/flybot-sg/oie/tree/v0.2.0) - 2026-04-16
 
 ### Added

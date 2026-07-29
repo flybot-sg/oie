@@ -49,21 +49,20 @@
 (defn- handle-landing
   [{:keys [session] :as request}
    {:keys [provider-key fetch-profile-fn login-fn success-redirect-uri]}]
-  (if-let [tokens (get-in request [:oauth2/access-tokens provider-key])]
-    (let [ident     (login-fn (fetch-profile-fn tokens))
-          return-to (get session session/return-to-key)
-          sess      (dissoc session ::ring-oauth2/access-tokens session/return-to-key)]
-      (if ident
+  (let [sess (dissoc session ::ring-oauth2/access-tokens session/return-to-key)]
+    (if-let [tokens (get-in request [:oauth2/access-tokens provider-key])]
+      (if-let [ident (login-fn (fetch-profile-fn tokens))]
         {:status  302
-         :headers {"Location" (or return-to
+         :headers {"Location" (or (get session session/return-to-key)
                                   (if (fn? success-redirect-uri)
                                     (success-redirect-uri request)
                                     success-redirect-uri))}
          :session (assoc sess session/session-key ident)}
         {:status  403
-         :session sess}))
-    {:status 401
-     :body   {:type :missing-token :message "OAuth2 access token not found."}}))
+         :session sess})
+      {:status  401
+       :body    {:type :missing-token :message "OAuth2 access token not found."}
+       :session sess})))
 
 (defn- wrap-return-to
   "Stores a validated `?return-to` query param in the session on launch
@@ -187,6 +186,15 @@
   (let [handler (make-handler {})]
     (:status (handler {:uri "/oauth2/test/success" :request-method :get :session {}})))
   ;; => 401
+
+  ;; landing without tokens clears flow state, keeps the rest of the session
+  (let [handler (make-handler {})
+        resp    (handler {:uri            "/oauth2/test/success"
+                          :request-method :get
+                          :session        {session/return-to-key "/stale"
+                                           :other-key            "keep-me"}})]
+    [(:status resp) (:session resp)])
+  ;; => [401 {:other-key "keep-me"}]
 
   ;; non-landing-uri → pass through
   (let [handler (make-handler {})]
