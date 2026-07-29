@@ -1,5 +1,4 @@
-(ns flybot.oie.session
-  (:require [clojure.string :as str]))
+(ns flybot.oie.session)
 
 (def session-key
   "Key under which the authenticated identity is stored in the Ring session.
@@ -16,14 +15,19 @@
   "Keeps a cookie-stored session under the 4096-byte browser cookie limit."
   512)
 
+(def ^:private return-path-re
+  "Allowlist of a same-origin path: a single leading `/` followed only by
+   RFC 3986 path/query characters, plus Unicode letters, marks and numbers so
+   that percent-decoded international paths survive. Everything else — control
+   characters, whitespace, backslashes, protocol-relative `//host` — is out."
+  #"/(?!/)[\p{L}\p{M}\p{N}._~!$&'()*+,;=:@%/?#-]*")
+
 (defn safe-return-path
   "Returns `path` when it is a same-origin path safe to redirect to, nil otherwise."
   [path]
   (when (and (string? path)
              (<= (count path) max-return-path-length)
-             (str/starts-with? path "/")
-             (not (str/starts-with? path "//"))
-             (not (re-find #"[\\\s\p{Cntrl}]" path)))
+             (re-matches return-path-re path))
     path))
 
 ^:rct/test
@@ -31,12 +35,18 @@
   (safe-return-path "/dashboards/abc") ;; => "/dashboards/abc"
   (safe-return-path "/") ;; => "/"
   (safe-return-path "/dashboards/abc?tab=1") ;; => "/dashboards/abc?tab=1"
+  (safe-return-path "/reports/café") ;; => "/reports/café"
+  (safe-return-path "/レポート/42") ;; => "/レポート/42"
   (safe-return-path "//evil.com") ;; => nil
   (safe-return-path "///evil.com") ;; => nil
   (safe-return-path "/\\evil.com") ;; => nil
   (safe-return-path "https://evil.com") ;; => nil
   (safe-return-path "javascript:alert(1)") ;; => nil
   (safe-return-path "/x\nSet-Cookie: a=1") ;; => nil
+  (safe-return-path "/x\u0085y") ;; => nil
+  (safe-return-path "/x\u00a0y") ;; => nil
+  (safe-return-path "/x\u2028y") ;; => nil
+  (safe-return-path "/x\u200by") ;; => nil
   (safe-return-path (apply str "/" (repeat 600 "a"))) ;; => nil
   (safe-return-path ["/a" "/b"]) ;; => nil
   (safe-return-path "") ;; => nil

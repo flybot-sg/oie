@@ -138,7 +138,7 @@ A `?return-to` query param on the launch URI is carried through the login in the
 GET /oauth2/google?return-to=/reports/42   →  ...OAuth flow...  →  302 Location: /reports/42
 ```
 
-Only safe same-origin paths are honored (validated by `session/safe-return-path`): the value must start with a single `/` and contain no backslashes, whitespace, or control characters. Anything else — absolute URLs, protocol-relative `//host` values, over-long paths — is ignored and the login redirects to `:success-redirect-uri` as usual. The session value under `session/return-to-key` is rewritten on every launch and removed when the login completes.
+Only safe same-origin paths are honored (validated by `session/safe-return-path`): a single leading `/` followed only by RFC 3986 path/query characters and Unicode letters, marks, and numbers. Anything else — absolute URLs, protocol-relative `//host` values, backslashes, whitespace, control characters, over-long paths — is ignored and the login redirects to `:success-redirect-uri` as usual. The session value under `session/return-to-key` is rewritten on every launch and removed when the login completes.
 
 ### Magic Link
 
