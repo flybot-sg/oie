@@ -47,30 +47,45 @@
   )
 
 (defn- handle-landing
-  [request {:keys [provider-key fetch-profile-fn
-                   login-fn success-redirect-uri]}]
+  [{:keys [session] :as request}
+   {:keys [provider-key fetch-profile-fn login-fn success-redirect-uri]}]
   (if-let [tokens (get-in request [:oauth2/access-tokens provider-key])]
-    (let [profile (fetch-profile-fn tokens)
-          ident   (login-fn profile)
-          sess    (dissoc (:session request) ::ring-oauth2/access-tokens)]
+    (let [ident     (login-fn (fetch-profile-fn tokens))
+          return-to (get session session/return-to-key)
+          sess      (dissoc session ::ring-oauth2/access-tokens session/return-to-key)]
       (if ident
         {:status  302
-         :headers {"Location" (if (fn? success-redirect-uri)
-                                (success-redirect-uri request)
-                                success-redirect-uri)}
+         :headers {"Location" (or return-to
+                                  (if (fn? success-redirect-uri)
+                                    (success-redirect-uri request)
+                                    success-redirect-uri))}
          :session (assoc sess session/session-key ident)}
         {:status  403
          :session sess}))
     {:status 401
      :body   {:type :missing-token :message "OAuth2 access token not found."}}))
 
+(defn- wrap-return-to
+  "Stores a validated `?return-to` query param in the session on launch
+   requests, clearing any stale value from an earlier login."
+  [handler profiles]
+  (let [launch-uris (into #{} (map :launch-uri) (vals profiles))]
+    (fn [{:keys [uri session query-params] :as req}]
+      (handler
+       (if (contains? launch-uris uri)
+         (assoc req :session
+                (if-let [path (session/safe-return-path (get query-params "return-to"))]
+                  (assoc session session/return-to-key path)
+                  (dissoc session session/return-to-key)))
+         req)))))
+
 (defn- build-landing-configs [profiles]
   (reduce-kv
    (fn [m provider-key profile]
      (assoc m (:landing-uri profile)
-            (select-keys (assoc profile :provider-key provider-key)
-                         [:provider-key :fetch-profile-fn
-                          :login-fn :success-redirect-uri])))
+            (-> profile
+                (select-keys [:fetch-profile-fn :login-fn :success-redirect-uri])
+                (assoc :provider-key provider-key))))
    {}
    profiles))
 
@@ -87,14 +102,19 @@
      :fetch-profile-fn     — `(fn [token-map] -> profile)`
      :login-fn             — `(fn [profile] -> identity | nil)`
      :success-redirect-uri — string or `(fn [req] -> uri)`
-   Identity is stored in session under `::session/user`."
+   Identity is stored in session under `::session/user`.
+
+   A `?return-to` query param on the launch URI that passes
+   `session/safe-return-path` overrides `:success-redirect-uri` after login."
   [handler profiles]
   (let [landing-configs (build-landing-configs profiles)
         interceptor     (fn [request]
                           (if-let [config (get landing-configs (:uri request))]
                             (handle-landing request config)
                             (handler request)))]
-    (ring-oauth2/wrap-oauth2 interceptor profiles)))
+    (-> interceptor
+        (ring-oauth2/wrap-oauth2 profiles)
+        (wrap-return-to profiles))))
 
 ^:rct/test
 (comment
@@ -181,4 +201,49 @@
                        :server-name    "example.com"
                        :server-port    443})))
   ;; => 302
+
+  (defn- launch-request
+    ([query-params] (launch-request query-params {}))
+    ([query-params session]
+     {:uri            "/oauth2/test"
+      :request-method :get
+      :scheme         :https
+      :server-name    "example.com"
+      :server-port    443
+      :query-params   query-params
+      :session        session}))
+
+  ;; launch captures a safe ?return-to in the session
+  (let [handler (make-handler {})
+        resp    (handler (launch-request {"return-to" "/reports/42"}))]
+    (get-in resp [:session session/return-to-key]))
+  ;; => "/reports/42"
+
+  ;; hostile ?return-to is ignored and a stale value is cleared
+  (let [handler (make-handler {})
+        resp    (handler (launch-request {"return-to" "//evil.com"}
+                                         {session/return-to-key "/stale"}))]
+    (contains? (:session resp) session/return-to-key))
+  ;; => false
+
+  ;; launch without ?return-to clears a stale value
+  (let [handler (make-handler {})
+        resp    (handler (launch-request {} {session/return-to-key "/stale"}))]
+    (contains? (:session resp) session/return-to-key))
+  ;; => false
+
+  ;; landing redirects to return-to over success-redirect-uri and clears it
+  (let [handler (make-handler {})
+        resp    (handler (landing-request {:token "tok"}
+                                          {session/return-to-key "/reports/42"}))]
+    [(get-in resp [:headers "Location"])
+     (contains? (:session resp) session/return-to-key)])
+  ;; => ["/reports/42" false]
+
+  ;; rejected login also drops return-to from the session
+  (let [handler (make-handler {:login-fn (constantly nil)})
+        resp    (handler (landing-request {:token "tok"}
+                                          {session/return-to-key "/reports/42"}))]
+    [(:status resp) (contains? (:session resp) session/return-to-key)])
+  ;; => [403 false]
   )

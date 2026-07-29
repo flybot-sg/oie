@@ -1,9 +1,47 @@
-(ns flybot.oie.session)
+(ns flybot.oie.session
+  (:require [clojure.string :as str]))
 
 (def session-key
   "Key under which the authenticated identity is stored in the Ring session.
    Used internally by session-strategy, wrap-oauth2, and wrap-magic-link."
   ::user)
+
+(def return-to-key
+  "Key under which the post-login redirect path is stored in the Ring session.
+   Written at launch from a validated `?return-to` query param, removed when
+   login completes."
+  ::return-to)
+
+(def ^:private max-return-path-length
+  "Keeps a cookie-stored session under the 4096-byte browser cookie limit."
+  512)
+
+(defn safe-return-path
+  "Returns `path` when it is a same-origin path safe to redirect to, nil otherwise."
+  [path]
+  (when (and (string? path)
+             (<= (count path) max-return-path-length)
+             (str/starts-with? path "/")
+             (not (str/starts-with? path "//"))
+             (not (re-find #"[\\\s\p{Cntrl}]" path)))
+    path))
+
+^:rct/test
+(comment
+  (safe-return-path "/dashboards/abc") ;; => "/dashboards/abc"
+  (safe-return-path "/") ;; => "/"
+  (safe-return-path "/dashboards/abc?tab=1") ;; => "/dashboards/abc?tab=1"
+  (safe-return-path "//evil.com") ;; => nil
+  (safe-return-path "///evil.com") ;; => nil
+  (safe-return-path "/\\evil.com") ;; => nil
+  (safe-return-path "https://evil.com") ;; => nil
+  (safe-return-path "javascript:alert(1)") ;; => nil
+  (safe-return-path "/x\nSet-Cookie: a=1") ;; => nil
+  (safe-return-path (apply str "/" (repeat 600 "a"))) ;; => nil
+  (safe-return-path ["/a" "/b"]) ;; => nil
+  (safe-return-path "") ;; => nil
+  (safe-return-path nil) ;; => nil
+  )
 
 (defn logout-handler
   "Returns a Ring handler that clears the session on POST.

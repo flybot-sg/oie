@@ -15,6 +15,19 @@
 
 (def ^:private clock (constantly 1000))
 
+(def ^:private google-profile
+  {:authorize-uri        "https://example.com/authorize"
+   :access-token-uri     "https://example.com/token"
+   :redirect-uri         "/oauth2/google/callback"
+   :launch-uri           "/oauth2/google"
+   :landing-uri          "/oauth2/google/success"
+   :scopes               [:openid]
+   :client-id            "test-id"
+   :client-secret        "test-secret"
+   :fetch-profile-fn     (constantly {:email "alice@example.com"})
+   :login-fn             (fn [profile] {:user-id 1 :email (:email profile)})
+   :success-redirect-uri "/home"})
+
 (deftest oauth2-and-bearer-token-flow
   (let [token-store     (atom {})
         bearer-strat    (bearer/bearer-token-strategy
@@ -24,22 +37,12 @@
         app             (-> api-handler
                             (core/wrap-authenticate [bearer-strat sess-strat])
                             (oauth2/wrap-oauth2
-                             {:google {:authorize-uri       "https://example.com/authorize"
-                                       :access-token-uri    "https://example.com/token"
-                                       :redirect-uri        "/oauth2/google/callback"
-                                       :launch-uri          "/oauth2/google"
-                                       :landing-uri         "/oauth2/google/success"
-                                       :scopes              [:openid]
-                                       :client-id           "test-id"
-                                       :client-secret       "test-secret"
-                                       :fetch-profile-fn    (fn [_tokens]
-                                                              {:email "alice@example.com"
-                                                               :name  "Alice"})
-                                       :login-fn            (fn [profile]
-                                                              {:user-id 1
-                                                               :email   (:email profile)
-                                                               :roles   #{:user}})
-                                       :success-redirect-uri "/"}}))
+                             {:google (assoc google-profile
+                                             :login-fn (fn [profile]
+                                                         {:user-id 1
+                                                          :email   (:email profile)
+                                                          :roles   #{:user}})
+                                             :success-redirect-uri "/")}))
         logout-handler  (session/logout-handler {:redirect-uri "/"})
         timeout-handler (session/session-timeout-handler {:redirect-uri "/oauth/google/login"})]
 
@@ -115,18 +118,6 @@
 
 (deftest oauth2-only-flow
   (let [sess-strat     (session-strat/session-strategy)
-        google-profile {:authorize-uri       "https://example.com/authorize"
-                        :access-token-uri    "https://example.com/token"
-                        :redirect-uri        "/oauth2/google/callback"
-                        :launch-uri          "/oauth2/google"
-                        :landing-uri         "/oauth2/google/success"
-                        :scopes              [:openid]
-                        :client-id           "test-id"
-                        :client-secret       "test-secret"
-                        :fetch-profile-fn    (constantly {:email "alice@example.com"})
-                        :login-fn            (fn [profile]
-                                               {:user-id 1 :email (:email profile)})
-                        :success-redirect-uri "/home"}
         app            (-> api-handler
                            (core/wrap-authenticate [sess-strat])
                            (oauth2/wrap-oauth2 {:google google-profile}))
@@ -167,6 +158,44 @@
         (is (= 302 (:status resp)))
         (is (= "/" (get-in resp [:headers "Location"])))
         (is (nil? (:session resp)))))))
+
+(deftest oauth2-return-to-flow
+  (let [sess-strat (session-strat/session-strategy)
+        app        (-> api-handler
+                       (core/wrap-authenticate [sess-strat])
+                       (oauth2/wrap-oauth2 {:google google-profile}))
+        launch     (fn [query-params]
+                     (app {:uri            "/oauth2/google"
+                           :request-method :get
+                           :scheme         :https
+                           :server-name    "example.com"
+                           :server-port    443
+                           :query-params   query-params}))
+        land       (fn [session]
+                     (app {:uri            "/oauth2/google/success"
+                           :request-method :get
+                           :session        (assoc session
+                                                  ::ring-oauth2/access-tokens
+                                                  {:google {:token "tok"}})}))]
+
+    (testing "launch captures return-to, landing redirects there and clears it"
+      (let [launch-resp  (launch {"return-to" "/reports/42"})
+            landing-resp (land (:session launch-resp))]
+        (is (= 302 (:status launch-resp)))
+        (is (= "/reports/42" (get-in landing-resp [:headers "Location"])))
+        (is (not (contains? (:session landing-resp) session/return-to-key)))
+        (is (= {:user-id 1 :email "alice@example.com"}
+               (get-in landing-resp [:session ::session/user])))))
+
+    (testing "hostile return-to is ignored, landing falls back to success-redirect-uri"
+      (let [launch-resp  (launch {"return-to" "//evil.com"})
+            landing-resp (land (:session launch-resp))]
+        (is (= "/home" (get-in landing-resp [:headers "Location"])))))
+
+    (testing "launch without return-to falls back to success-redirect-uri"
+      (let [launch-resp  (launch {})
+            landing-resp (land (:session launch-resp))]
+        (is (= "/home" (get-in landing-resp [:headers "Location"])))))))
 
 (deftest bearer-token-only-flow
   (let [token-store (atom {})
