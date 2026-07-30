@@ -5,14 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0](https://github.com/flybot-sg/oie/tree/0.2.0) - 2026-04-16
+## [0.3.0](https://github.com/flybot-sg/oie/tree/v0.3.0) - 2026-07-29
+
+### Added
+- **`wrap-oauth2` `?return-to` support**: A safe same-origin path passed as `?return-to=` on the launch URI is carried through the login in the session and takes precedence over `:success-redirect-uri` when the login completes. Unsafe values (absolute URLs, protocol-relative `//host`, backslashes, whitespace, control characters, over-long paths) are ignored
+- **`session/return-to-key`**: Session key holding the post-login redirect path
+- **`session/safe-return-path`**: Validates a redirect target as a safe same-origin path
+
+### Changed
+- **`wrap-oauth2` landing without tokens**: The 401 response now clears OAuth2 flow state (access tokens, pending `return-to`) from the session instead of leaving it untouched
+
+## [0.2.0](https://github.com/flybot-sg/oie/tree/v0.2.0) - 2026-04-16
 
 ### Added
 - **`wrap-authenticate` `:allow-anonymous?` option**: Pass requests through with no identity when no strategy matches, enabling mixed public/authenticated routes
 - **`session-strategy` `:verify` option**: Optional fn to re-validate session identity per request; returning nil skips the strategy (stale session)
 - **`logout-handler` `:response-fn` option**: Zero-arg fn returning a custom Ring response instead of the default 302 redirect, enabling SPA clients to receive meaningful responses from `fetch` calls. Session is always cleared regardless
 
-## [0.1.0](https://github.com/flybot-sg/oie/tree/0.1.0) - 2026-04-13
+## [0.1.1](https://github.com/flybot-sg/oie/tree/v0.1.1) - 2026-04-13
+
+### Fixed
+- **cljdoc compatibility**: Add `^:no-doc` to the oauth2 namespace
+
+## [0.1.0](https://github.com/flybot-sg/oie/tree/v0.1.0) - 2026-04-13
 
 ### Added
 - **Strategy-based authentication**: `wrap-authenticate` middleware tries strategies in order, first `{:authenticated data}` wins

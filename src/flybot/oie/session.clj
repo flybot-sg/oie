@@ -5,6 +5,55 @@
    Used internally by session-strategy, wrap-oauth2, and wrap-magic-link."
   ::user)
 
+(def return-to-key
+  "Key under which the post-login redirect path is stored in the Ring session.
+   Written at launch from a validated `?return-to` query param, cleared on any
+   landing-uri hit."
+  ::return-to)
+
+(def ^:private max-return-path-length
+  "Keeps a cookie-stored session under the 4096-byte browser cookie limit."
+  512)
+
+(def ^:private return-path-re
+  "Same-origin path allowlist: one leading `/` (never `//`), then only RFC 3986
+   path/query characters, `[`/`]` for Ring nested query params, and Unicode
+   letters, marks and numbers. Anything else — control characters, whitespace,
+   backslashes — fails to match."
+  #"/(?!/)[\p{L}\p{M}\p{N}._~!$&'()*+,;=:@%/?#\[\]-]*")
+
+(defn safe-return-path
+  "Returns `path` when it is a same-origin path safe to redirect to, nil otherwise."
+  [path]
+  (when (and (string? path)
+             (<= (count path) max-return-path-length)
+             (re-matches return-path-re path))
+    path))
+
+^:rct/test
+(comment
+  (safe-return-path "/dashboards/abc") ;; => "/dashboards/abc"
+  (safe-return-path "/") ;; => "/"
+  (safe-return-path "/dashboards/abc?tab=1") ;; => "/dashboards/abc?tab=1"
+  (safe-return-path "/reports/café") ;; => "/reports/café"
+  (safe-return-path "/レポート/42") ;; => "/レポート/42"
+  (safe-return-path "/reports?filter[status]=open") ;; => "/reports?filter[status]=open"
+  (safe-return-path "//evil.com") ;; => nil
+  (safe-return-path "///evil.com") ;; => nil
+  (safe-return-path "/\\evil.com") ;; => nil
+  (safe-return-path "https://evil.com") ;; => nil
+  (safe-return-path "javascript:alert(1)") ;; => nil
+  (safe-return-path "/x\nSet-Cookie: a=1") ;; => nil
+  (safe-return-path "/x\u0085y") ;; => nil
+  (safe-return-path "/x\u00a0y") ;; => nil
+  (safe-return-path "/x\u2028y") ;; => nil
+  (safe-return-path "/x\u200by") ;; => nil
+  (safe-return-path (apply str "/" (repeat 600 "a"))) ;; => nil
+  (safe-return-path ["/a" "/b"]) ;; => nil
+  (safe-return-path "") ;; => nil
+  (safe-return-path nil) ;; => nil
+  )
+
 (defn logout-handler
   "Returns a Ring handler that clears the session on POST.
    Returns 405 for non-POST requests.
