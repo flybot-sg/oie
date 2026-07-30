@@ -16,11 +16,11 @@
   512)
 
 (def ^:private return-path-re
-  "Allowlist of a same-origin path: a single leading `/` followed only by
-   RFC 3986 path/query characters, plus Unicode letters, marks and numbers so
-   that percent-decoded international paths survive. Everything else — control
-   characters, whitespace, backslashes, protocol-relative `//host` — is out."
-  #"/(?!/)[\p{L}\p{M}\p{N}._~!$&'()*+,;=:@%/?#-]*")
+  "Same-origin path allowlist: one leading `/` (never `//`), then only RFC 3986
+   path/query characters, `[`/`]` for Ring nested query params, and Unicode
+   letters, marks and numbers. Anything else — control characters, whitespace,
+   backslashes — fails to match."
+  #"/(?!/)[\p{L}\p{M}\p{N}._~!$&'()*+,;=:@%/?#\[\]-]*")
 
 (defn safe-return-path
   "Returns `path` when it is a same-origin path safe to redirect to, nil otherwise."
@@ -37,6 +37,7 @@
   (safe-return-path "/dashboards/abc?tab=1") ;; => "/dashboards/abc?tab=1"
   (safe-return-path "/reports/café") ;; => "/reports/café"
   (safe-return-path "/レポート/42") ;; => "/レポート/42"
+  (safe-return-path "/reports?filter[status]=open") ;; => "/reports?filter[status]=open"
   (safe-return-path "//evil.com") ;; => nil
   (safe-return-path "///evil.com") ;; => nil
   (safe-return-path "/\\evil.com") ;; => nil
