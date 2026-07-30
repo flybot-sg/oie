@@ -7,8 +7,8 @@
 
 (def return-to-key
   "Key under which the post-login redirect path is stored in the Ring session.
-   Written at launch from a validated `?return-to` query param, removed when
-   login completes."
+   Written at launch from a validated `?return-to` query param, cleared on any
+   landing-uri hit."
   ::return-to)
 
 (def ^:private max-return-path-length

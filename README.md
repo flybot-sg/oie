@@ -140,7 +140,7 @@ GET /oauth2/google?return-to=/reports/42   →  ...OAuth flow...  →  302 Locat
 
 Only same-origin paths pass `session/safe-return-path`: one leading `/` (never `//`), then RFC 3986 path/query characters, `[`/`]` for nested query params, and Unicode letters, marks, and numbers. Anything else — absolute URLs, backslashes, whitespace, control characters, paths over 512 characters — is ignored, and the login redirects to `:success-redirect-uri` as usual.
 
-The session value under `session/return-to-key` is rewritten on every launch and removed when the login completes.
+The session value under `session/return-to-key` is rewritten on every launch and cleared once the landing URI is reached, whether the login succeeds (302), is rejected (403), or arrives without tokens (401).
 
 ### Magic Link
 
