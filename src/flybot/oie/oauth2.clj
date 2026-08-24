@@ -3,7 +3,8 @@
             [clojure.string :as str]
             [flybot.oie.session :as session]
             [ring.middleware.oauth2 :as ring-oauth2])
-  (:import [java.util Base64]))
+  (:import [java.net URI]
+           [java.util Base64]))
 
 (defn- pad-base64url
   "Adds padding to a base64url string. JWT tokens strip padding per RFC 7515."
@@ -64,11 +65,14 @@
        :body    {:type :missing-token :message "OAuth2 access token not found."}
        :session sess})))
 
+(defn- launch-uri-set [profiles]
+  (into #{} (map :launch-uri) (vals profiles)))
+
 (defn- wrap-return-to
   "Stores a validated `?return-to` query param in the session on launch
    requests, clearing any stale value from an earlier login."
   [handler profiles]
-  (let [launch-uris (into #{} (map :launch-uri) (vals profiles))]
+  (let [launch-uris (launch-uri-set profiles)]
     (fn [{:keys [uri session query-params] :as req}]
       (handler
        (if (contains? launch-uris uri)
@@ -77,6 +81,53 @@
                   (assoc session session/return-to-key path)
                   (dissoc session session/return-to-key)))
          req)))))
+
+(defn- redirect-path [{:keys [redirect-uri]}]
+  (.getPath (URI/create redirect-uri)))
+
+(defn- state-cookie-name [state]
+  (str "__Host-oauth2-state-" state))
+
+(defn- add-state-cookie
+  "Mirrors the launch response's OAuth2 state into a per-flow `__Host-` cookie.
+   Value is the PKCE code verifier, or `\"1\"` without PKCE."
+  [{:keys [session] :as resp}]
+  (assoc-in resp [:cookies (state-cookie-name (::ring-oauth2/state session))]
+            {:value     (or (::ring-oauth2/code-verifier session) "1")
+             :max-age   300
+             :http-only true
+             :secure    true
+             :same-site :lax
+             :path      "/"}))
+
+(defn- handle-callback
+  "Restores the state (and PKCE verifier) from the per-flow cookie into the
+   session before ring-oauth2's state check, then expires the cookie."
+  [handler req]
+  (let [state       (get-in req [:query-params "state"])
+        cookie-name (state-cookie-name state)]
+    (if-let [verifier (when state (get-in req [:cookies cookie-name :value]))]
+      (-> req
+          (update :session assoc ::ring-oauth2/state state)
+          (cond-> (not= verifier "1")
+            (update :session assoc ::ring-oauth2/code-verifier verifier))
+          handler
+          (assoc-in [:cookies cookie-name]
+                    {:value "" :max-age 0 :path "/" :secure true}))
+      (handler req))))
+
+(defn- wrap-state-cookie
+  "Mirrors the OAuth2 state into a per-flow `__Host-oauth2-state-<state>`
+   cookie so the callback state check survives concurrent launches and
+   racing session writes."
+  [handler profiles]
+  (let [launch-uris    (launch-uri-set profiles)
+        callback-paths (into #{} (map redirect-path) (vals profiles))]
+    (fn [{:keys [uri] :as req}]
+      (cond
+        (contains? launch-uris uri)    (add-state-cookie (handler req))
+        (contains? callback-paths uri) (handle-callback handler req)
+        :else                          (handler req)))))
 
 (defn- build-landing-configs [profiles]
   (reduce-kv
@@ -104,7 +155,11 @@
    Identity is stored in session under `::session/user`.
 
    A `?return-to` query param on the launch URI that passes
-   `session/safe-return-path` overrides `:success-redirect-uri` after login."
+   `session/safe-return-path` overrides `:success-redirect-uri` after login.
+
+   The OAuth2 state is mirrored into a short-lived `__Host-oauth2-state-<state>`
+   cookie so concurrent launches or racing session writes cannot break the
+   callback state check."
   [handler profiles]
   (let [landing-configs (build-landing-configs profiles)
         interceptor     (fn [request]
@@ -113,6 +168,7 @@
                             (handler request)))]
     (-> interceptor
         (ring-oauth2/wrap-oauth2 profiles)
+        (wrap-state-cookie profiles)
         (wrap-return-to profiles))))
 
 ^:rct/test
@@ -131,7 +187,9 @@
                              :name  "Alice"})
      :login-fn            (fn [profile]
                             {:user-id 1 :email (:email profile)})
-     :success-redirect-uri "/"})
+     :success-redirect-uri "/"
+     :state-mismatch-handler (fn [_] {:status 400 :body :state-mismatch})
+     :no-auth-code-handler   (fn [_] {:status 400 :body :state-check-passed})})
 
   (defn- make-handler [overrides]
     (wrap-oauth2 (constantly {:status 200 :body "ok"})
@@ -254,4 +312,70 @@
                                           {session/return-to-key "/reports/42"}))]
     [(:status resp) (contains? (:session resp) session/return-to-key)])
   ;; => [403 false]
+
+  (defn- callback-request [state cookies session]
+    {:uri            "/oauth2/test/callback"
+     :request-method :get
+     :query-params   {"state" state}
+     :cookies        cookies
+     :session        session})
+
+  ;; launch mirrors the OAuth2 state into a per-flow __Host- cookie
+  (let [handler (make-handler {})
+        resp    (handler (launch-request {}))
+        state   (get-in resp [:session ::ring-oauth2/state])]
+    (get-in resp [:cookies (str "__Host-oauth2-state-" state)]))
+  ;; => {:value "1", :max-age 300, :http-only true, :secure true, :same-site :lax, :path "/"}
+
+  ;; callback with matching cookie passes the state check and expires the cookie
+  ;; (no code param, so the flow stops at the no-auth-code sentinel)
+  (let [handler     (make-handler {})
+        launch      (handler (launch-request {}))
+        state       (get-in launch [:session ::ring-oauth2/state])
+        cookie-name (state-cookie-name state)
+        resp        (handler (callback-request state
+                                               {cookie-name {:value "1"}}
+                                               (:session launch)))]
+    [(:body resp) (get-in resp [:cookies cookie-name])])
+  ;; => [:state-check-passed {:value "", :max-age 0, :path "/", :secure true}]
+
+  ;; two launches overwrite the session state — completing the FIRST still
+  ;; passes because both cookies coexist
+  (let [handler (make-handler {})
+        launch1 (handler (launch-request {}))
+        state1  (get-in launch1 [:session ::ring-oauth2/state])
+        launch2 (handler (launch-request {} (:session launch1)))
+        state2  (get-in launch2 [:session ::ring-oauth2/state])
+        resp    (handler (callback-request state1
+                                           {(state-cookie-name state1) {:value "1"}
+                                            (state-cookie-name state2) {:value "1"}}
+                                           (:session launch2)))]
+    (:body resp))
+  ;; => :state-check-passed
+
+  ;; hostile callback: state param without a matching cookie fails the check
+  (let [handler (make-handler {})
+        resp    (handler (callback-request "forged" {} {}))]
+    [(:body resp) (contains? resp :cookies)])
+  ;; => [:state-mismatch false]
+
+  ;; PKCE: launch cookie carries the verifier, callback restores it into the
+  ;; session ring-oauth2 sees (observed via a custom redirect-handler)
+  (let [handler  (make-handler {:pkce? true
+                                :redirect-handler
+                                (fn [req]
+                                  {:status 200
+                                   :body   (select-keys (:session req)
+                                                        [::ring-oauth2/state
+                                                         ::ring-oauth2/code-verifier])})})
+        launch   (handler (launch-request {}))
+        state    (get-in launch [:session ::ring-oauth2/state])
+        verifier (get-in launch [:session ::ring-oauth2/code-verifier])
+        resp     (handler (callback-request state
+                                            {(state-cookie-name state) {:value verifier}}
+                                            {}))]
+    [(= verifier (get-in launch [:cookies (state-cookie-name state) :value]))
+     (= {::ring-oauth2/state state ::ring-oauth2/code-verifier verifier}
+        (:body resp))])
+  ;; => [true true]
   )
