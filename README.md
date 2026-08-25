@@ -205,7 +205,7 @@ Returns 401 with a redirect hint for client-side re-auth. For use with `ring.mid
 | oie component | Requires upstream | Why |
 |---|---|---|
 | `session-strategy` | `wrap-session` | Reads identity from `:session` |
-| `wrap-oauth2` | `wrap-params`, `wrap-session` | ring-oauth2 reads `:query-params` for state/code; stores tokens in `:session` |
+| `wrap-oauth2` | `wrap-params`, `wrap-session` | ring-oauth2 reads `:query-params` for state/code; stores tokens in `:session`; a per-flow `__Host-` state cookie keeps concurrent launches and racing session writes from breaking the callback state check |
 | `wrap-magic-link` | `wrap-params`, `wrap-session` | Reads `:query-params` (verify) and `:params` (request); stores identity in `:session` |
 | `logout-handler` | `wrap-session`, `wrap-anti-forgery` | Clears `:session`; POST-only needs CSRF protection |
 | `bearer-token-strategy` | — | Reads from `:headers` (always present in Ring requests) |
