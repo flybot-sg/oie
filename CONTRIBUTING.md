@@ -80,7 +80,7 @@ bb test
 - Lowercase description, no trailing period.
 - Imperative mood: `add feature`, not `added feature`.
 - The scope is required and names the component: `core`, `authz`, `token`, `session`, `bearer`, `magic-link`, `oauth2`, `schema`.
-- Repo-wide work that touches no namespace uses `ci`, `build` or `deps`.
+- Repo-wide work that touches no namespace uses `ci`, `build`, `deps` or `repo`.
 - Details belong in the PR description, not the commit.
 
 Keep the body to a few plain sentences: the what and the non-obvious why. Do not list the files touched, narrate the steps taken, or report test results; the diff and CI already show those. LLM-generated messages tend to include all three, so trim them before committing.
