@@ -270,3 +270,9 @@ Fix:
 ```sh
 bb fmt-fix
 ```
+
+## Contributing
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — issues, branches, PR titles, commits, and the local gate
+- [CHANGELOG.md](CHANGELOG.md) — released versions and what is unreleased
+- [LICENSE](LICENSE) — Unlicense, public domain
