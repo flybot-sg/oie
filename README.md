@@ -271,6 +271,22 @@ Fix:
 bb fmt-fix
 ```
 
+## Releasing
+
+Tag the release:
+
+```sh
+bb tag
+```
+
+This pushes the `v<version>` tag, which triggers the Clojars deploy workflow. The workflow runs `bb deploy`; `bb jar` builds the JAR locally without publishing.
+
+Before a release, check for outdated dependencies:
+
+```sh
+bb outdated
+```
+
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — issues, branches, PR titles, commits, and the local gate
